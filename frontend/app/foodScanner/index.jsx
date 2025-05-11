@@ -16,9 +16,9 @@ import * as FileSystem from 'expo-file-system';
 import { useRouter } from 'expo-router';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import RecipeSelector from '../RecipeSelector';
+import { API_URL } from '../../constants';
 
-
-const API_BASE_URL = 'http://192.168.1.106:5000/api';
+const API_BASE_URL = API_URL;
 
 export default function FoodScanner() {
   const router = useRouter();

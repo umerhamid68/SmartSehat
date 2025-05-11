@@ -238,6 +238,7 @@ export default function RootLayout() {
           <Stack.Screen name="chatBot/index" options={{ headerShown: false, initialParams: { isNavBarVisible } }} />
           <Stack.Screen name="foodScanner/index" options={{ headerShown: false }}/>
           <Stack.Screen name="userProfile/index" options={{ headerShown: false }}/>
+          <Stack.Screen name="mealDetail/index" options={{ headerShown: false }} />
         </Stack>
 
         {/* Conditionally render BottomNav */}

@@ -5,6 +5,9 @@ import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { useRouter } from 'expo-router';
 import DateTimePicker from 'react-native-modal-datetime-picker';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { API_URL } from '../../constants';
+
+const API_BASE_URL = API_URL;
 
 export default function MedicalHistory() {
     const [selectedDisease, setSelectedDisease] = useState('heart');
@@ -78,7 +81,7 @@ export default function MedicalHistory() {
                 return;
             }
 
-            const response = await fetch('http://192.168.1.106:5000/medicalHistory', {
+            const response = await fetch(`${API_BASE_URL}/medicalHistory`, {
                 method: 'GET',
                 headers: {
                     Authorization: `Bearer ${token}`,
@@ -145,7 +148,7 @@ export default function MedicalHistory() {
                 }),
             };
             console.log(medicalHistory);
-            const response = await fetch('http://192.168.1.106:5000/medicalHistory/add', {
+            const response = await fetch(`${API_BASE_URL}/medicalHistory/add`, {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/x-www-form-urlencoded',

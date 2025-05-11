@@ -14,7 +14,7 @@ try:
     from controllers.medicalHistoryController import *
     from controllers.scan_controller import *
     from controllers.chat_controller import *
-    from controllers.diet_controller import *
+    from controllers.diet_plan_controller import *
 
 except Exception as e:
     print(f"Error importing controllers: {e}")

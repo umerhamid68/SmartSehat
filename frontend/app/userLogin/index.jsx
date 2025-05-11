@@ -5,6 +5,9 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as WebBrowser from 'expo-web-browser';
 import { useOAuth } from '@clerk/clerk-expo';
 import * as Linking from 'expo-linking';
+import { API_URL } from '../../constants';
+
+const API_BASE_URL = API_URL;
 
 export const useWarmUpBrowser = () => {
     React.useEffect(() => {
@@ -55,7 +58,7 @@ export default function UserLogin() {
           formData.append('password', password); // Flask expects "password"
   
           // Send POST request to the backend
-          const response = await fetch('http://192.168.1.106:5000/user/login', {
+          const response = await fetch(`${API_BASE_URL}/user/login`, {
               method: 'POST',
               headers: {
                   'Content-Type': 'application/x-www-form-urlencoded', // Ensure form data format

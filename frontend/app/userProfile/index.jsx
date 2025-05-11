@@ -10,6 +10,9 @@ import {
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useRouter } from 'expo-router';
+import { API_URL } from '../../constants';
+
+const API_BASE_URL = API_URL;
 
 export default function UserProfile() {
     const [medicalHistory, setMedicalHistory] = useState([]);
@@ -30,7 +33,7 @@ export default function UserProfile() {
                 return;
             }
 
-            const response = await fetch('http://192.168.1.106:5000/user/userDetails', {
+            const response = await fetch(`${API_BASE_URL}/user/userDetails`, {
                 method: 'GET',
                 headers: {
                     Authorization: `Bearer ${token}`,
@@ -64,7 +67,7 @@ export default function UserProfile() {
                 return;
             }
 
-            const response = await fetch('http://192.168.1.106:5000/medicalHistory', {
+            const response = await fetch(`${API_BASE_URL}/medicalHistory`, {
                 method: 'GET',
                 headers: {
                     Authorization: `Bearer ${token}`,
@@ -98,7 +101,7 @@ export default function UserProfile() {
                 return;
             }
 
-            const response = await fetch('http://192.168.1.106:5000/medicalHistory/delete', {
+            const response = await fetch(`${API_BASE_URL}/medicalHistory/delete`, {
                 method: 'DELETE',
                 headers: {
                     Authorization: `Bearer ${token}`,

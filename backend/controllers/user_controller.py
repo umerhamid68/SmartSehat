@@ -1,6 +1,6 @@
 import importlib
 import flask
-from flask import request, send_file
+from flask import request, send_file, make_response
 from app import app
 from models.user_model import user_model
 from models.auth_model import auth_model
@@ -10,7 +10,7 @@ obj = user_model()
 auth = auth_model()
 
 
-@app.route("/user/all")
+@app.route("/api/user/all")
 # The endpoint for token_auth() is automatically getting calculated in the auth_model.token_auth() method
 @auth.token_auth()
 def all_users():
@@ -18,32 +18,32 @@ def all_users():
     # res.headers["Content-type"] = "application/json"
     return obj.all_user_model()
 
-@app.route("/user/add", methods=["POST"])
+@app.route("/api/user/add", methods=["POST"])
 def add_user():
     print(request.form)
     return obj.add_user_model(request.form)
 
-@app.route("/user/addmultiple", methods=["POST"])
+@app.route("/api/user/addmultiple", methods=["POST"])
 def add_multiple_users():
     return obj.add_multiple_users_model(request.json)
 
-@app.route("/user/delete/<id>", methods=["DELETE"])
+@app.route("/api/user/delete/<id>", methods=["DELETE"])
 def delete_user(id):
     return obj.delete_user_model(id)
 
-@app.route("/user/update", methods=["PUT"])
+@app.route("/api/user/update", methods=["PUT"])
 def update_user():
     return obj.update_user_model(request.form)
 
-@app.route("/user/patch", methods=["PATCH"])
+@app.route("/api/user/patch", methods=["PATCH"])
 def patch_user():
     return obj.patch_user_model(request.form)
 
-@app.route("/user/page/<pno>/limit/<limit>", methods=["get"])
+@app.route("/api/user/page/<pno>/limit/<limit>", methods=["get"])
 def pagination(pno, limit):
     return obj.pagination_model(pno, limit)
 
-@app.route("/user/<uid>/avatar/upload", methods=["PATCH"])
+@app.route("/api/user/<uid>/avatar/upload", methods=["PATCH"])
 def upload_avatar(uid):
     file = request.files['avatar']
     new_filename =  str(datetime.now().timestamp()).replace(".", "") # Generating unique name for the file
@@ -54,18 +54,18 @@ def upload_avatar(uid):
     file.save(f"uploads/{new_filename}.{ext}")
     return obj.upload_avatar_model(uid, db_path)
 
-@app.route("/user/avatar/<uid>", methods=["GET"])
+@app.route("/api/user/avatar/<uid>", methods=["GET"])
 def get_avatar(uid):
     data = obj.get_avatar_path_model(uid)
     root_dir = os.path.dirname(app.instance_path)
     return send_file(f"{root_dir}{data['payload'][0]['avatar']}")
 
-@app.route("/user/login", methods=["POST"])
+@app.route("/api/user/login", methods=["POST"])
 def user_login():
     auth_data = request.form
     return obj.user_login_model(auth_data['username'], auth_data['password'])
 
-@app.route("/user/userDetails", methods=["GET"])
+@app.route("/api/user/userDetails", methods=["GET"])
 @auth.token_auth()
 def get_user_details():
     # Extract the token from the request headers

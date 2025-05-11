@@ -465,8 +465,8 @@ import {
 import { FontAwesome, MaterialIcons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import DietPlanSection from '../components/DietPlanSection';
 
-const API_BASE_URL = 'http://192.168.1.106:5000/api';
 
 export default function Home() {
   const router = useRouter();
@@ -483,7 +483,6 @@ export default function Home() {
   useEffect(() => {
     // Get user info and fetch diet plans when component mounts
     getUserInfo();
-    fetchDietPlans();
     
     // Set initial meal time based on current time
     const currentHour = new Date().getHours();
@@ -508,112 +507,6 @@ export default function Home() {
     } catch (error) {
       console.error('Error getting user info:', error);
     }
-  };
-
-  const fetchDietPlans = async () => {
-    try {
-      setLoading(true);
-      const token = await AsyncStorage.getItem('jwt_token');
-      
-      if (!token) {
-        console.log('No auth token found');
-        setDietPlans(getSampleDietPlans());
-        setLoading(false);
-        return;
-      }
-  
-      console.log('Fetching diet plans...');
-      
-      // Updated URL to match backend route structure
-      const response = await fetch(`${API_BASE_URL}/diet/plans`, {
-        method: 'GET',
-        headers: {
-          'Authorization': `Bearer ${token}`,
-          'Content-Type': 'application/json'
-        }
-      });
-      
-      console.log('Response status:', response.status);
-      
-      if (response.status === 404) {
-        console.log('Diet plans endpoint not found. Using sample data.');
-        setDietPlans(getSampleDietPlans());
-        return;
-      }
-      
-      const responseText = await response.text();
-      console.log('Response preview:', responseText.substring(0, 100));
-      
-      try {
-        const data = JSON.parse(responseText);
-        if (data.plans) {
-          console.log('Diet plans loaded successfully');
-          setDietPlans(data.plans);
-        } else {
-          console.log('Unexpected response format:', data);
-          setDietPlans(getSampleDietPlans());
-        }
-      } catch (jsonError) {
-        console.error('JSON parsing failed:', jsonError);
-        setDietPlans(getSampleDietPlans());
-      }
-    } catch (error) {
-      console.error('Error fetching diet plans:', error);
-      setDietPlans(getSampleDietPlans());
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  
-  // Provide sample data for fallback
-  const getSampleDietPlans = () => {
-    return {
-      morning: [
-        {
-          id: 1,
-          name: "Healthy Breakfast Sandwich",
-          description: "One Sandwich with Half Boiled Egg",
-          image: null,
-          time_range: "08:00am - 11:00am",
-          nutritional_values: {
-            calories: 350,
-            protein: "15g",
-            carbs: "30g",
-            fat: "12g"
-          },
-          is_completed: false
-        },
-        {
-          id: 2,
-          name: "Vegetable Oatmeal Bowl",
-          description: "Oatmeal with Mixed Vegetables and Herbs",
-          image: null,
-          time_range: "07:00am - 09:00am",
-          is_completed: false
-        }
-      ],
-      evening: [
-        {
-          id: 3,
-          name: "Grilled Chicken Salad",
-          description: "Grilled Chicken with Fresh Vegetables",
-          image: null,
-          time_range: "01:00pm - 03:00pm",
-          is_completed: false
-        }
-      ],
-      night: [
-        {
-          id: 4,
-          name: "Steamed Fish with Vegetables",
-          description: "Lightly Seasoned Steamed Fish with Seasonal Vegetables",
-          image: null,
-          time_range: "07:00pm - 09:00pm",
-          is_completed: false
-        }
-      ]
-    };
   };
 
   const navigateChatbot = () => {
@@ -653,64 +546,7 @@ export default function Home() {
     return `${hours}:${minutes} ${ampm}`;
   }
 
-  const renderDietPlans = () => {
-    const plans = dietPlans[selectedMealTime] || [];
-
-    if (loading) {
-      return (
-        <View style={styles.loadingContainer}>
-          <ActivityIndicator size="large" color="#FF6B81" />
-          <Text style={styles.loadingText}>Loading diet plans...</Text>
-        </View>
-      );
-    }
-
-    if (plans.length === 0) {
-      return (
-        <View style={styles.emptyContainer}>
-          <Text style={styles.emptyText}>No diet plans for {selectedMealTime}</Text>
-          <TouchableOpacity 
-            style={styles.refreshButton}
-            onPress={fetchDietPlans}
-          >
-            <Text style={styles.refreshButtonText}>Refresh</Text>
-          </TouchableOpacity>
-        </View>
-      );
-    }
-
-    return plans.map((plan, index) => (
-      <View key={plan.id || index} style={styles.dietPlanCard}>
-        <Image 
-          source={
-            plan.image 
-              ? { uri: `${API_BASE_URL}/images/${plan.image}` } 
-              : require('./../assets/images/sandwich.png')
-          }
-          style={styles.foodImage}
-          defaultSource={require('./../assets/images/sandwich.png')}
-        />
-        <Text style={styles.dietTitle}>{plan.name}</Text>
-        <Text style={styles.dietDescription}>{plan.description}</Text>
-        <Text style={styles.dietTime}>Around: {plan.time_range}</Text>
-        
-        {plan.is_completed && (
-          <View style={styles.completedBadge}>
-            <FontAwesome name="check-circle" size={16} color="#4CAF50" />
-            <Text style={styles.completedText}>Completed</Text>
-          </View>
-        )}
-        
-        <TouchableOpacity 
-          style={styles.doneButton}
-          onPress={() => navigateToDietDetails(plan.id)}
-        >
-          <Text style={styles.doneButtonText}>View Details</Text>
-        </TouchableOpacity>
-      </View>
-    ));
-  };
-
+  
   return (
     <View style={styles.container}>
       <ScrollView contentContainerStyle={styles.scrollViewContent} showsVerticalScrollIndicator={false}>
@@ -756,48 +592,10 @@ export default function Home() {
           </View>
         </View>
 
-        {/* Diet Plan Section */}
-        <View style={styles.dietHeader}>
-          <Text style={styles.sectionTitle}>Today's Diet Plans</Text>
-          <TouchableOpacity onPress={() => router.push('/allDietPlans')}>
-            <Text style={styles.viewAll}>View All</Text>
-          </TouchableOpacity>
-        </View>
+        <DietPlanSection />
+
         
-        <View style={styles.dietPlanContainer}>
-          {/* Diet Plan Options/Tabs */}
-          <View style={styles.dietPlanOptions}>
-            <TouchableOpacity 
-              style={[styles.dietPlanButton, selectedMealTime === 'morning' && styles.active]}
-              onPress={() => setSelectedMealTime('morning')}
-            >
-              <Text style={[styles.dietPlanText, selectedMealTime === 'morning' ? styles.activeText : {}]}>
-                Morning
-              </Text>
-            </TouchableOpacity>
-            
-            <TouchableOpacity 
-              style={[styles.dietPlanButton, selectedMealTime === 'evening' && styles.active]}
-              onPress={() => setSelectedMealTime('evening')}
-            >
-              <Text style={[styles.dietPlanText, selectedMealTime === 'evening' ? styles.activeText : {}]}>
-                Evening
-              </Text>
-            </TouchableOpacity>
-            
-            <TouchableOpacity 
-              style={[styles.dietPlanButton, selectedMealTime === 'night' && styles.active]}
-              onPress={() => setSelectedMealTime('night')}
-            >
-              <Text style={[styles.dietPlanText, selectedMealTime === 'night' ? styles.activeText : {}]}>
-                Night
-              </Text>
-            </TouchableOpacity>
-          </View>
-          
-          {/* Dynamic Diet Plan Cards */}
-          {renderDietPlans()}
-        </View>
+
       </ScrollView>
     </View>
   );

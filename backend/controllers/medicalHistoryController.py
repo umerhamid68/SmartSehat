@@ -21,13 +21,13 @@ def extract_user_info_from_token():
     except Exception as e:
         return None
 
-@app.route("/medicalHistory/all", methods=["GET"])
+@app.route("/api/medicalHistory/all", methods=["GET"])
 @auth.token_auth()
 def all_medical_history():
     """Fetch all medical history records."""
     return medical_history_obj.all_medical_history_model()
 
-@app.route("/medicalHistory/add", methods=["POST"])
+@app.route("/api/medicalHistory/add", methods=["POST"])
 @auth.token_auth()
 def add_medical_history():
     """Add a new medical history record."""
@@ -67,7 +67,7 @@ def add_medical_history():
     
     return medical_history_obj.add_medical_history_model(data)
 
-@app.route("/medicalHistory/update", methods=["PUT"])
+@app.route("/api/medicalHistory/update", methods=["PUT"])
 @auth.token_auth()
 def update_medical_history():
     """Update an existing medical history record."""
@@ -106,7 +106,7 @@ def update_medical_history():
 
     return medical_history_obj.update_medical_history_model(data)
 
-@app.route("/medicalHistory/delete", methods=["DELETE"])
+@app.route("/api/medicalHistory/delete", methods=["DELETE"])
 @auth.token_auth()
 def delete_medical_history():
     """Delete a medical history record."""
@@ -119,7 +119,7 @@ def delete_medical_history():
 
     return medical_history_obj.delete_medical_history_model(data)
 
-@app.route("/medicalHistory", methods=["GET"])
+@app.route("/api/medicalHistory", methods=["GET"])
 @auth.token_auth()
 def get_medical_history():
     """Get medical history for the authenticated user."""
