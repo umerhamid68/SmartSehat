@@ -77,3 +77,14 @@ def mark_meal_completed():
     
     # Mark the meal as completed
     return diet_plan_obj.mark_meal_completed(userId, data['mealId'])
+
+@app.route("/api/diet/meal/<int:meal_id>", methods=["GET"])
+@auth.token_auth()
+def get_meal_details(meal_id):  # meal_id is a parameter here
+    """Get detailed information for a specific meal."""
+    userId = extract_user_info_from_token()
+    if not userId:
+        return make_response({"message": "INVALID_TOKEN"}, 401)
+    
+    # Get the meal details
+    return diet_plan_obj.get_meal_details(userId, meal_id)

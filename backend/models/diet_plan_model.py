@@ -1,5 +1,6 @@
 import os
 import json
+import ast
 import mysql.connector
 import numpy as np
 import torch
@@ -8,90 +9,18 @@ import torch.nn.functional as F
 from datetime import datetime, timedelta
 from flask import make_response, jsonify
 from configs.config import dbconfig
+
+# Add the path to import the Pakistani recipe integration module
 import sys
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from diet_recommendation.recipe_matcher import generate_intelligent_pakistani_meal_plan
+from diet_recommendation.pakistani_recipes_integration_via_agent import (
+    generate_smart_sehat_meal_plan,
+    VAE,
+    MealOptimizer
+)
 
 # Path to saved model components
 MODEL_DIR = os.path.join(os.path.dirname(__file__), '../models/diet_model')
-
-class VAE(nn.Module):
-    def __init__(self, input_dim=10, latent_dim=256, num_meal_classes=None):
-        super(VAE, self).__init__()
-        self.input_dim = input_dim
-        self.latent_dim = latent_dim
-        self.num_meal_classes = num_meal_classes
-        self.hidden_size = 512
-
-        self.encoder_fc = nn.Linear(input_dim, 256)
-        self.fc_mu = nn.Linear(256, latent_dim)
-        self.fc_logvar = nn.Linear(256, latent_dim)
-
-        self.latent_to_hidden = nn.Linear(latent_dim, self.hidden_size)
-
-        self.gru = nn.GRU(
-            input_size=latent_dim,
-            hidden_size=self.hidden_size,
-            num_layers=2,
-            batch_first=True
-        )
-
-        self.meal_classifier = nn.Linear(self.hidden_size, num_meal_classes)
-        self.energy_predictor = nn.Linear(self.hidden_size, 1)
-        self.nutrient_predictor = nn.Linear(self.hidden_size, 4)
-
-    def encode(self, x):
-        x = F.relu(self.encoder_fc(x))
-        mu = self.fc_mu(x)
-        logvar = self.fc_logvar(x)
-        return mu, logvar
-
-    def reparameterize(self, mu, logvar):
-        std = torch.exp(0.5 * logvar)
-        eps = torch.randn_like(std)
-        return mu + eps * std
-
-    def decode(self, z, num_meals=6):
-        batch_size = z.size(0)
-        h_projected = F.relu(self.latent_to_hidden(z))
-        h_0 = h_projected.unsqueeze(0).repeat(2, 1, 1)
-        input_seq = torch.zeros(batch_size, num_meals, self.latent_dim).to(z.device)
-        output, _ = self.gru(input_seq, h_0)
-        meal_logits = self.meal_classifier(output)
-        pooled_output = output.mean(dim=1)
-        energy = self.energy_predictor(pooled_output)
-        nutrients = self.nutrient_predictor(pooled_output)
-        return meal_logits, energy, nutrients
-
-    def forward(self, x):
-        mu, logvar = self.encode(x)
-        z = self.reparameterize(mu, logvar)
-        meal_logits, energy, nutrients = self.decode(z)
-        return meal_logits, energy, nutrients, mu, logvar
-
-class MealOptimizer:
-    def __init__(self):
-        pass
-
-    def adjust_portions(self, meals, predicted_energy, target_energy):
-        """
-        Implementation of Equations 12-13 from the paper
-        Adjusts meal quantities to match target energy intake
-        """
-        if predicted_energy <= 0:
-            return meals
-            
-        d = (target_energy - predicted_energy) / predicted_energy
-
-        adjusted_meals = []
-        for meal in meals:
-            original_portion = meal.get('portion', 1.0)
-            new_portion = d * original_portion + original_portion
-            adjusted_meal = meal.copy()
-            adjusted_meal['portion'] = new_portion
-            adjusted_meals.append(adjusted_meal)
-
-        return adjusted_meals
 
 class diet_plan_model():
     def __init__(self):
@@ -110,6 +39,36 @@ class diet_plan_model():
             self.load_model_components()
         except Exception as e:
             print(f"Error loading model components: {str(e)}")
+    def _parse_list_field(self, value):
+        """
+        Robustly turn a DB field that *might* contain:
+          • a real Python list  (already deserialised)
+          • a JSON string       "[\"item1\", \"item2\"]"
+          • a repr string       "['item1', 'item2']"
+          • a plain CSV string  "item1, item2"
+        into a clean Python list[str].
+        """
+        if value is None:
+            return []
+
+        # already a list
+        if isinstance(value, list):
+            return value
+
+        # must be a string after this
+        txt = str(value).strip()
+
+        # Try JSON, then Python literal
+        for parser in (json.loads, ast.literal_eval):
+            try:
+                parsed = parser(txt)
+                if isinstance(parsed, list):
+                    return parsed
+            except Exception:
+                pass
+
+        # Fallback: split on commas
+        return [item.strip(" '\"\t\n\r") for item in txt.split(',') if item.strip()]
     
     def load_model_components(self):
         """Load saved model components"""
@@ -143,9 +102,6 @@ class diet_plan_model():
         # Initialize the meal optimizer
         self.meal_optimizer = MealOptimizer()
         
-        # Load recipes
-        self.recipe_db = self._load_recipes()
-        
     def _load_nutrition_data(self):
         """Load nutrition data from database or CSV"""
         try:
@@ -158,36 +114,9 @@ class diet_plan_model():
             import pandas as pd
             return pd.DataFrame(result)
     
-    def _load_recipes(self):
-        """Load Pakistani recipes from file"""
-        try:
-            with open(os.path.join(MODEL_DIR, 'analyzed_pakistani_recipes.csv'), 'r') as f:
-                import pandas as pd
-                return pd.read_csv(f)
-        except:
-            # Return empty DataFrame if file not found
-            import pandas as pd
-            return pd.DataFrame()
-    
     def calculate_user_metrics(self, user_data):
         """
         Calculate BMR, BMI, PAL and target energy intake based on user data
-        
-        Formulas:
-        - BMR (Mifflin-St Jeor equation):
-          Men: BMR = 10 × weight(kg) + 6.25 × height(cm) - 5 × age(y) + 5
-          Women: BMR = 10 × weight(kg) + 6.25 × height(cm) - 5 × age(y) - 161
-          
-        - BMI = weight(kg) / height(m)²
-        
-        - PAL (Physical Activity Level):
-          1.2 = Sedentary (little or no exercise)
-          1.375 = Light activity (1-3 days/week)
-          1.55 = Moderate activity (3-5 days/week)
-          1.725 = Very active (6-7 days/week)
-          1.9 = Extra active (very hard exercise or physical job)
-          
-        - Target Energy Intake = BMR × PAL
         """
         # Extract user data
         weight = float(user_data.get('weight', 70))  # Default: 70kg
@@ -276,8 +205,8 @@ class diet_plan_model():
             print(f"Error saving user metrics: {str(e)}")
             return False
     
-    def get_user_profile(self, user_id):
-        """Get complete user profile data for the VAE model"""
+    def get_user_profile_for_diet(self, user_id):
+        """Get complete user profile in the format expected by the diet algorithm"""
         try:
             # Query to get latest medical history
             query = """
@@ -298,136 +227,75 @@ class diet_plan_model():
             
             if not user_data:
                 return None
-                
-            # Get disease specific data
+            
+            # Calculate metrics if not already calculated
+            if not user_data.get('bmr'):
+                metrics = self.calculate_user_metrics(user_data)
+                user_data.update(metrics)
+                self.save_user_metrics(user_id, user_data['historyid'], metrics)
+            
+            # Create profile in the format expected by generate_smart_sehat_meal_plan
+            user_profile = {
+                'weight': float(user_data.get('weight', 70)),
+                'height': float(user_data.get('height', 170)) / 100,  # Convert cm to meters
+                'bmr': float(user_data.get('bmr', 1500)),
+                'age': int(user_data.get('age', 35)),
+                'bmi': float(user_data.get('bmi', 25)),
+                'pal': float(user_data.get('pal', 1.5)),
+                'target_energy_intake': float(user_data.get('targetEnergyIntake', 2000)),
+                'cvd': 0,
+                't2d': 0,
+                'iron_deficiency': 0
+            }
+            
+            # Set disease flags based on diseaseType
             disease_type = user_data.get('diseaseType', '')
-            disease_data = None
-            
             if disease_type == 'heart':
-                self.cur.execute(
-                    "SELECT * FROM heartdisease WHERE historyid = %s", 
-                    (user_data['historyid'],)
-                )
-                disease_data = self.cur.fetchone()
+                user_profile['cvd'] = 1
             elif disease_type == 'diabetes':
-                self.cur.execute(
-                    "SELECT * FROM diabetes WHERE historyid = %s", 
-                    (user_data['historyid'],)
-                )
-                disease_data = self.cur.fetchone()
+                user_profile['t2d'] = 1
             elif disease_type == 'liver':
-                self.cur.execute(
-                    "SELECT * FROM fattyliver WHERE historyid = %s", 
-                    (user_data['historyid'],)
-                )
-                disease_data = self.cur.fetchone()
+                # For fatty liver, we can treat it similar to diabetes
+                user_profile['t2d'] = 1
             
-            # Create a combined profile
-            combined_profile = user_data
-            if disease_data:
-                combined_profile.update(disease_data)
-            
-            # If metrics not calculated, calculate them
-            if not combined_profile.get('bmr'):
-                metrics = self.calculate_user_metrics(combined_profile)
-                combined_profile.update(metrics)
-                self.save_user_metrics(
-                    user_id, 
-                    combined_profile['historyid'], 
-                    metrics
-                )
-            
-            return combined_profile
+            return user_profile
         except Exception as e:
             print(f"Error getting user profile: {str(e)}")
             return None
     
-    def create_vae_input(self, user_profile):
-        """Create input tensor for the VAE model"""
-        # Default values
-        weight = 70
-        height = 170
-        bmr = 1500
-        age = 35
-        bmi = 25
-        pal = 1.5
-        target_energy = 2000
-        cvd = 0
-        t2d = 0
-        iron_deficiency = 0
-        
-        # Update with actual values if available
-        if user_profile:
-            weight = float(user_profile.get('weight', weight))
-            height = float(user_profile.get('height', height))
-            bmr = float(user_profile.get('bmr', bmr))
-            age = int(user_profile.get('age', age))
-            bmi = float(user_profile.get('bmi', bmi))
-            pal = float(user_profile.get('pal', pal))
-            target_energy = float(user_profile.get('targetEnergyIntake', target_energy))
-            
-            # Set disease flags
-            if user_profile.get('diseaseType') == 'heart':
-                cvd = 1
-            elif user_profile.get('diseaseType') == 'diabetes':
-                t2d = 1
-            
-            # Iron deficiency is assumed 0, could be extended in future
-        
-        # Normalize values
-        normalized_weight = weight / self.norm_params['weight_max']
-        normalized_height = height / self.norm_params['height_max']
-        normalized_bmr = bmr / self.norm_params['bmr_max']
-        normalized_age = age / self.norm_params['age_max']
-        normalized_bmi = bmi / self.norm_params['bmi_max']
-        normalized_pal = pal / self.norm_params['pal_max']
-        normalized_target_energy = target_energy / self.norm_params['energy_max']
-        
-        # Create input tensor
-        user_features = np.array([
-            normalized_weight,
-            normalized_height,
-            normalized_bmr,
-            normalized_age,
-            normalized_bmi,
-            normalized_pal,
-            normalized_target_energy,
-            cvd,
-            t2d,
-            iron_deficiency
-        ], dtype=np.float32)
-        
-        return torch.tensor(user_features).unsqueeze(0).to(self.device)
-    
     def generate_diet_plan(self, user_id):
-        """Generate a personalized diet plan for the user"""
+        """Generate a personalized Pakistani diet plan for the user"""
         try:
-            # Get user profile and medical history
-            user_profile = self.get_user_profile(user_id)
+            # Get user profile in the correct format
+            user_profile = self.get_user_profile_for_diet(user_id)
             
-            # If we have obtained all necessary user information
-            if user_profile:
-                # Create input tensor for the VAE model
-                user_tensor = self.create_vae_input(user_profile)
-                
-                # First generate the base meal plan with the VAE model
-                base_weekly_plan = self.generate_base_meal_plan(user_tensor, user_profile)
-                
-                # Then replace with Pakistani recipes
-                weekly_plan = generate_intelligent_pakistani_meal_plan(
-                    user_profile,
-                    base_weekly_plan,
-                    target_calories=user_profile['targetEnergyIntake']
-                )
-                
-                # Save the plan to database
-                self.save_diet_plan(user_id, user_profile['targetEnergyIntake'], weekly_plan)
-                
-                # Return the generated plan
-                return make_response({
-                    "message": "Diet plan generated successfully",
-                    "plan": self.format_plan_for_frontend(weekly_plan)
-                }, 200)
+            if not user_profile:
+                return make_response({"message": "User profile not found"}, 404)
+            
+            print(f"User profile for diet generation: {user_profile}")
+            
+            # Generate Pakistani meal plan using the imported function
+            pakistani_meal_plan = generate_smart_sehat_meal_plan(
+                user_profile, 
+                self.model, 
+                self.meal_nutrition_df, 
+                self.meal_optimizer, 
+                self.norm_params
+            )
+            
+            if not pakistani_meal_plan:
+                return make_response({"message": "Failed to generate meal plan"}, 500)
+            
+            # Save the plan to database
+            self.save_diet_plan(user_id, user_profile['target_energy_intake'], pakistani_meal_plan)
+            
+            # Format for frontend
+            frontend_plan = self.format_plan_for_frontend(pakistani_meal_plan)
+            
+            return make_response({
+                "message": "Diet plan generated successfully",
+                "plan": frontend_plan
+            }, 200)
             
         except Exception as e:
             print(f"Error generating diet plan: {str(e)}")
@@ -441,6 +309,22 @@ class diet_plan_model():
             week_start = today
             week_end = today + timedelta(days=6)
             
+            # Convert numpy types to native Python types for JSON serialization
+            def convert_to_serializable(obj):
+                if isinstance(obj, np.float64):
+                    return float(obj)
+                elif isinstance(obj, np.int64):
+                    return int(obj)
+                elif isinstance(obj, dict):
+                    return {k: convert_to_serializable(v) for k, v in obj.items()}
+                elif isinstance(obj, list):
+                    return [convert_to_serializable(item) for item in obj]
+                else:
+                    return obj
+            
+            # Convert the weekly plan to a JSON-serializable format
+            serializable_plan = convert_to_serializable(weekly_plan)
+            
             # Insert plan into DietPlan table
             plan_query = """
             INSERT INTO DietPlan 
@@ -453,37 +337,97 @@ class diet_plan_model():
                 week_start.strftime('%Y-%m-%d'),
                 week_end.strftime('%Y-%m-%d'),
                 target_calories,
-                json.dumps(weekly_plan)
+                json.dumps(serializable_plan)
             )
             self.cur.execute(plan_query, plan_values)
             plan_id = self.cur.lastrowid
             
+            # Check which columns exist in the Meal table
+            self.cur.execute("SHOW COLUMNS FROM Meal")
+            columns = [col['Field'] for col in self.cur.fetchall()]
+            has_ingredients = 'ingredients' in columns
+            has_instructions = 'instructions' in columns
+            has_summary = 'summary' in columns
+            has_nutrition_details = 'nutritionDetails' in columns
+            
             # Insert individual meals
             for day_idx, day_plan in enumerate(weekly_plan):
                 day_of_week = day_idx + 1  # 1-7 for Monday-Sunday
-                
                 for meal in day_plan['meals']:
-                    meal_query = """
-                    INSERT INTO Meal 
-                    (planId, dayOfWeek, mealType, name, description, calories, protein, carbs, fat)
-                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
-                    """
+                    #print(meal)
+                    meal_name = meal.get('name', meal.get('title', f"Meal {meal.get('meal_id', 'Unknown')}"))
+                    meal_description = meal.get('summary', f"Portion: {meal.get('portion', 1.0):.2f}")
+                    meal_portion = meal.get('portion', 1.0)
+                    # Process ingredients and instructions
+                    ingredients = meal.get('ingredients', [])
+                    if isinstance(ingredients, str):
+                        ingredients_text = ingredients
+                    elif isinstance(ingredients, list):
+                        ingredients_text = json.dumps(ingredients)
+                    else:
+                        ingredients_text = None
                     
-                    meal_name = meal.get('title', f"Meal {meal.get('meal_id', 'Unknown')}")
-                    meal_description = f"Portion: {meal.get('portion', 1.0):.2f}"
+                    instructions = meal.get('instructions', [])
+                    if isinstance(instructions, str):
+                        instructions_text = instructions
+                    elif isinstance(instructions, list):
+                        instructions_text = json.dumps(instructions)
+                    else:
+                        instructions_text = None
                     
-                    meal_values = (
-                        plan_id,
-                        day_of_week,
-                        meal['meal_type'],
-                        meal_name,
-                        meal_description,
-                        meal.get('kcal', 0) * meal.get('portion', 1.0),
-                        meal.get('protein', 0) * meal.get('portion', 1.0),
-                        meal.get('carbohydrate', 0) * meal.get('portion', 1.0),
-                        meal.get('fat', 0) * meal.get('portion', 1.0)
-                    )
+                    # Convert nutrition details to JSON
+                    nutrition_details = meal.get('nutrition_details', {})
+                    if isinstance(nutrition_details, dict):
+                        nutrition_json = json.dumps(nutrition_details)
+                    else:
+                        nutrition_json = None
+                    
+                    # Build the query dynamically based on available columns
+                    if has_ingredients and has_instructions and has_summary and has_nutrition_details:
+                        meal_query = """
+                        INSERT INTO Meal 
+                        (planId, dayOfWeek, mealType, name, description, portion, calories, protein, carbs, fat, 
+                         ingredients, instructions, summary, nutritionDetails)
+                        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                        """
+                        meal_values = (
+                            plan_id,
+                            day_of_week,
+                            meal['meal_type'],
+                            meal_name,
+                            meal_description,
+                            meal_portion,
+                            float(meal.get('kcal', 0)),
+                            float(meal.get('protein', 0)),
+                            float(meal.get('carbohydrate', 0)),
+                            float(meal.get('fat', 0)),
+                            ingredients_text,
+                            instructions_text,
+                            meal.get('summary', ''),
+                            nutrition_json
+                        )
+                    else:
+                        # Fallback to basic query for older database schema
+                        meal_query = """
+                        INSERT INTO Meal 
+                        (planId, dayOfWeek, mealType, name, description, portion, calories, protein, carbs, fat)
+                        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                        """
+                        meal_values = (
+                            plan_id,
+                            day_of_week,
+                            meal['meal_type'],
+                            meal_name,
+                            meal_description,
+                            meal_portion,
+                            float(meal.get('kcal', 0)),
+                            float(meal.get('protein', 0)),
+                            float(meal.get('carbohydrate', 0)),
+                            float(meal.get('fat', 0))
+                        )
+                    
                     self.cur.execute(meal_query, meal_values)
+                    meal['meal_id'] = self.cur.lastrowid
             
             return True
         except Exception as e:
@@ -505,22 +449,43 @@ class diet_plan_model():
             # Group meals by time of day
             for meal in day_plan['meals']:
                 meal_type = meal.get('meal_type', '')
-                meal_name = meal.get('title', f"Meal {meal.get('meal_id', 'Unknown')}")
-                meal_calories = meal.get('kcal', 0) * meal.get('portion', 1.0)
+                meal_name = meal.get('name', meal.get('title', f"Meal {meal.get('meal_id', 'Unknown')}"))
+                meal_calories = float(meal.get('kcal', 0))
                 
-                # Format for frontend display
+                # Process ingredients
+                ingredients   = self._parse_list_field(meal.get('ingredients'))
+                instructions  = self._parse_list_field(meal.get('instructions'))
+                
+                # Create a better description
+                summary = meal.get('summary', '')
+                description = summary if summary else meal.get('description', '')
+                if not description and ingredients:
+                    # Create description from ingredients
+                    if isinstance(ingredients, list) and len(ingredients) > 0:
+                        ingredients_text = ', '.join(str(ing) for ing in ingredients[:3])
+                        if len(ingredients) > 3:
+                            ingredients_text += f" and {len(ingredients) - 3} more ingredients"
+                        description = f"Made with {ingredients_text}"
+                    else:
+                        description = "Traditional Pakistani ingredients"
+                
+                # Format for frontend display with all data
                 frontend_meal = {
                     'id': meal.get('meal_id', 0),
                     'name': meal_name,
-                    'description': f"A nutritious {meal_type.replace('_', ' ')}",
+                    'description': description,
+                    'portion': meal.get('portion', 1.0),
                     'image': None,  # Can be updated with actual images
                     'time_range': self.get_time_range_for_meal(meal_type),
                     'nutritional_values': {
                         'calories': round(meal_calories),
-                        'protein': f"{round(meal.get('protein', 0) * meal.get('portion', 1.0), 1)}g",
-                        'carbs': f"{round(meal.get('carbohydrate', 0) * meal.get('portion', 1.0), 1)}g",
-                        'fat': f"{round(meal.get('fat', 0) * meal.get('portion', 1.0), 1)}g"
+                        'protein': f"{round(float(meal.get('protein', 0)), 1)}g",
+                        'carbs': f"{round(float(meal.get('carbohydrate', 0)), 1)}g",
+                        'fat': f"{round(float(meal.get('fat', 0)), 1)}g"
                     },
+                    'ingredients': ingredients if isinstance(ingredients, list) else [],
+                    'instructions': instructions if isinstance(instructions, list) else [],
+                    'nutrition_details': meal.get('nutrition_details', {}),
                     'is_completed': False
                 }
                 
@@ -573,9 +538,29 @@ class diet_plan_model():
             # Load plan data
             plan_id = plan_data['planId']
             
+            # Check which columns exist in the Meal table
+            self.cur.execute("SHOW COLUMNS FROM Meal")
+            columns = [col['Field'] for col in self.cur.fetchall()]
+            
+            # Build the query dynamically based on available columns
+            base_columns = ['mealId', 'dayOfWeek', 'mealType', 'name', 'description', 'calories', 'protein', 'carbs', 'fat']
+            additional_columns = []
+            
+            if 'ingredients' in columns:
+                additional_columns.append('ingredients')
+            if 'instructions' in columns:
+                additional_columns.append('instructions')
+            if 'summary' in columns:
+                additional_columns.append('summary')
+            if 'nutritionDetails' in columns:
+                additional_columns.append('nutritionDetails')
+            
+            all_columns = base_columns + additional_columns
+            column_str = ', '.join(all_columns)
+            
             # Get meals grouped by time of day
-            query = """
-            SELECT mealId, dayOfWeek, mealType, name, description, calories, protein, carbs, fat
+            query = f"""
+            SELECT {column_str}
             FROM Meal
             WHERE planId = %s AND dayOfWeek = 1  -- First day of the week
             ORDER BY mealType
@@ -593,11 +578,38 @@ class diet_plan_model():
             for meal in meals:
                 meal_type = meal['mealType']
                 
+                # Process ingredients if available
+                ingredients = []
+                if 'ingredients' in meal and meal['ingredients']:
+                    try:
+                        ingredients = self._parse_list_field(meal.get('ingredients'))
+                    except:
+                        ingredients = meal['ingredients'].split(',') if isinstance(meal['ingredients'], str) else []
+                
+                # Process instructions if available
+                instructions = []
+                if 'instructions' in meal and meal['instructions']:
+                    try:
+                        instructions = self._parse_list_field(meal.get('instructions'))
+                    except:
+                        instructions = [meal['instructions']] if isinstance(meal['instructions'], str) else []
+                
+                # Process nutrition details if available
+                nutrition_details = {}
+                if 'nutritionDetails' in meal and meal['nutritionDetails']:
+                    try:
+                        nutrition_details = json.loads(meal['nutritionDetails'])
+                    except:
+                        nutrition_details = {}
+                
+                # Use summary for description if available
+                description = meal.get('summary', meal['description']) or f"A nutritious {meal_type.replace('_', ' ')}"
+                
                 frontend_meal = {
                     'id': meal['mealId'],
                     'name': meal['name'],
-                    'description': meal['description'] or f"A nutritious {meal_type.replace('_', ' ')}",
-                    'image': None,  # Can be updated with actual images
+                    'description': description,
+                    'image': None,
                     'time_range': self.get_time_range_for_meal(meal_type),
                     'nutritional_values': {
                         'calories': round(meal['calories']),
@@ -605,7 +617,10 @@ class diet_plan_model():
                         'carbs': f"{round(meal['carbs'], 1)}g",
                         'fat': f"{round(meal['fat'], 1)}g"
                     },
-                    'is_completed': False  # This could be stored in another table
+                    'ingredients': ingredients,
+                    'instructions': instructions,
+                    'nutrition_details': nutrition_details,
+                    'is_completed': False
                 }
                 
                 # Add to appropriate time category
@@ -663,7 +678,7 @@ class diet_plan_model():
                 except:
                     pass
             
-            # Option 2: Reconstruct from Meal table
+            # Option 2: Reconstruct from Meal table (fallback)
             query = """
             SELECT dayOfWeek, mealType, name, description, calories, protein, carbs, fat
             FROM Meal
@@ -712,7 +727,71 @@ class diet_plan_model():
         except Exception as e:
             print(f"Error getting weekly diet plan: {str(e)}")
             return make_response({"message": f"Error retrieving weekly diet plan: {str(e)}"}, 500)
+
+    def get_meal_details(self, user_id, meal_id):
+        """Get detailed information for a specific meal"""
+        try:
+            # Check if the meal belongs to the user and get all details
+            query = """
+            SELECT m.*, dp.userId
+            FROM Meal m
+            JOIN DietPlan dp ON m.planId = dp.planId
+            WHERE dp.userId = %s AND m.mealId = %s
+            """
+            self.cur.execute(query, (user_id, meal_id))
+            meal_data = self.cur.fetchone()
             
+            if not meal_data:
+                return make_response({"message": "Meal not found or does not belong to user"}, 404)
+            
+            # Process the meal data
+            meal = {
+                'id': meal_data['mealId'],
+                'name': meal_data['name'],
+                'description': meal_data['description'],
+                'summary': meal_data.get('summary', ''),
+                'time_range': self.get_time_range_for_meal(meal_data['mealType']),
+                'meal_type': meal_data['mealType'],
+                'portion': meal_data['portion'],
+                'nutritional_values': {
+                    'calories': round(meal_data['calories']),
+                    'protein': f"{round(meal_data['protein'], 1)}g",
+                    'carbs': f"{round(meal_data['carbs'], 1)}g",
+                    'fat': f"{round(meal_data['fat'], 1)}g"
+                },
+                'ingredients': [],
+                'instructions': [],
+                'nutrition_details': {},
+                'is_completed': False
+            }
+            
+            # Process ingredients
+            if meal_data.get('ingredients'):
+                try:
+                    meal['ingredients'] = self._parse_list_field(meal_data.get('ingredients'))
+                except:
+                    meal['ingredients'] = [meal_data['ingredients']]
+            
+            # Process instructions
+            if meal_data.get('instructions'):
+                try:
+                    meal['instructions'] = self._parse_list_field(meal_data.get('instructions'))
+                except:
+                    meal['instructions'] = [meal_data['instructions']]
+            
+            # Process nutrition details
+            if meal_data.get('nutritionDetails'):
+                try:
+                    meal['nutrition_details'] = json.loads(meal_data['nutritionDetails'])
+                except:
+                    meal['nutrition_details'] = {}
+            
+            return make_response({"meal": meal}, 200)
+            
+        except Exception as e:
+            print(f"Error getting meal details: {str(e)}")
+            return make_response({"message": f"Error retrieving meal details: {str(e)}"}, 500)
+
     def mark_meal_completed(self, user_id, meal_id):
         """Mark a specific meal as completed"""
         try:
