@@ -65,6 +65,7 @@ class chat_model():
                 return jsonify({"message": bot_response}), 200
 
         except Exception as e:
+            print(f"Error processing chat: {e}")
             return jsonify({"error": str(e)}), 500
 
     def substitute_meal(self, userId, user_message):

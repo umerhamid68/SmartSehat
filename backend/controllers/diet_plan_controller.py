@@ -97,3 +97,15 @@ def get_meal_details(meal_id):  # meal_id is a parameter here
     
     # Get the meal details
     return diet_plan_obj.get_meal_details(userId, meal_id)
+
+
+
+@app.route("/api/diet/all-meals", methods=["GET"])
+@auth.token_auth()
+def get_all_diet_plan_meals():
+    """Get all meals grouped by day for the authenticated user."""
+    userId = extract_user_info_from_token()
+    if not userId:
+        return make_response({"message": "INVALID_TOKEN"}, 401)
+    
+    return diet_plan_obj.get_all_diet_plan_meals(userId)

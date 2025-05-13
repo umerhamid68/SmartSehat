@@ -19,11 +19,11 @@ export default function BottomNav() {
         <FontAwesome name="home" size={35} color={getIconColor('/landing')} />
       </TouchableOpacity>
 
-      <TouchableOpacity onPress={() => router.push('/search')}>
+      <TouchableOpacity onPress={() => router.push('/allMeals')}>
         <FontAwesome name="search" size={30} color={getIconColor('/search')} />
       </TouchableOpacity>
 
-      <TouchableOpacity onPress={() => router.push('/comments')}>
+      <TouchableOpacity onPress={() => router.push('/scanHistory')}>
         <FontAwesome name="comments" size={30} color={getIconColor('/comments')} />
       </TouchableOpacity>
 

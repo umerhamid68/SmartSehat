@@ -200,3 +200,13 @@ def predict_meal_safety():
 
     except Exception as e:
         return jsonify({"error": str(e)}), 500
+
+@app.route('/api/scan/history', methods=['GET'])
+@auth.token_auth()
+def get_scan_history():
+    """Get scan history for the authenticated user."""
+    userId = extract_user_info_from_token()
+    if not userId:
+        return make_response({"message": "INVALID_TOKEN"}, 401)
+    
+    return obj.get_scan_history(userId)

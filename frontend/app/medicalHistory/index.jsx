@@ -92,7 +92,7 @@ export default function MedicalHistory() {
             if (response.ok) {
                 const historyData = await response.json();
                 Alert.alert('Medical History', JSON.stringify(historyData), [
-                    { text: 'OK', onPress: () => router.push('/landing') },
+                    { text: 'OK', onPress: () => router.replace('/landing') },
                 ]);
             } else if (response.status === 401) {
                 Alert.alert('Error', 'Invalid token. Please log in again.');
@@ -160,7 +160,7 @@ export default function MedicalHistory() {
 
             if (response.ok) {
                 Alert.alert('Success', 'Medical history added successfully!', [
-                    { text: 'OK', onPress: () => router.push('/landing') },
+                    { text: 'OK', onPress: () => router.replace('/landing') },
                 ]);
             } else {
                 const errorData = await response.json();

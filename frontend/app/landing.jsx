@@ -466,6 +466,8 @@ import { FontAwesome, MaterialIcons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import DietPlanSection from '../components/DietPlanSection';
+import { useFocusEffect } from 'expo-router';
+import { BackHandler } from 'react-native';
 
 
 export default function Home() {
@@ -494,6 +496,20 @@ export default function Home() {
       setSelectedMealTime('night');
     }
   }, []);
+  
+  useFocusEffect(
+    React.useCallback(() => {
+      const onBackPress = () => {
+        // Prevent going back
+        return true;
+      };
+
+      BackHandler.addEventListener('hardwareBackPress', onBackPress);
+
+      return () =>
+        BackHandler.removeEventListener('hardwareBackPress', onBackPress);
+    }, [])
+  );
 
   const getUserInfo = async () => {
     try {

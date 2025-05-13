@@ -76,7 +76,7 @@ export default function UserLogin() {
               Alert.alert('Success', 'Login successful!', [
                   {
                       text: 'OK',
-                      onPress: () => router.push('/landing'), // Redirect to medical history page
+                      onPress: () => router.replace('/landing'), // Redirect to medical history page
                   },
               ]);
           } else if (response.status === 204) {

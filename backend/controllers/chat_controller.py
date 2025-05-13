@@ -49,4 +49,5 @@ def chat():
         return chat_obj.process_chat(userId, user_message)
 
     except Exception as e:
+        print(f"Error in chat: {str(e)}")
         return jsonify({"error": str(e)}), 500

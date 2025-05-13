@@ -32,7 +32,7 @@ from datetime import date, timedelta
 TEST_OFFSET_DAYS = 0        # +3 → jump 3 days ahead,  -2 → 2 days back
 
 # 2) Or pin "today" to an absolute calendar date     (overrides offset)
-TEST_STATIC_DATE = None     # e.g., date(2025, 5, 20)
+TEST_STATIC_DATE = None    # e.g., date(2025, 5, 20)
 # ------------------------------------------------------------------
 
 
@@ -88,6 +88,27 @@ class diet_plan_model():
         # Fallback: split on commas
         return [item.strip(" '\"\t\n\r") for item in txt.split(',') if item.strip()]
     
+    def _ensure_conn(self):
+        """
+        One call per request: make sure the connection is alive
+        and *bound to the current thread*.
+        """
+        import pymysql
+        try:
+            self.conn.ping(reconnect=True)        # re‑opens if MySQL dropped it
+        except Exception:
+            # stale or cross‑thread → open a brand‑new connection
+            self.conn = pymysql.connect(
+                host=dbconfig['host'],
+                user=dbconfig['username'],
+                password=dbconfig['password'],
+                database=dbconfig['database'],
+                autocommit=True,
+                cursorclass=pymysql.cursors.DictCursor,
+                ssl={"ssl_disabled": True},       # ← turn off TLS locally
+            )
+        self.cur = self.conn.cursor()
+
     def load_model_components(self):
         """Load saved model components"""
         # Device configuration
@@ -122,7 +143,9 @@ class diet_plan_model():
         
     def _load_nutrition_data(self):
         """Load nutrition data from database or CSV"""
+
         try:
+            self._ensure_conn()
             import pandas as pd
             return pd.read_csv(os.path.join(MODEL_DIR, 'meal_nutrition_complete.csv'))
         except:
@@ -194,6 +217,7 @@ class diet_plan_model():
     def save_user_metrics(self, user_id, history_id, metrics):
         """Save calculated user metrics to database"""
         try:
+            self._ensure_conn()
             query = """
             INSERT INTO UserMetrics 
             (userId, historyId, bmr, bmi, targetEnergyIntake, pal, calculatedOn)
@@ -226,6 +250,7 @@ class diet_plan_model():
     def get_user_profile_for_diet(self, user_id):
         """Get complete user profile in the format expected by the diet algorithm"""
         try:
+            self._ensure_conn()
             # Query to get latest medical history
             query = """
             SELECT 
@@ -322,6 +347,7 @@ class diet_plan_model():
     def save_diet_plan(self, user_id, target_calories, weekly_plan):
         """Save the generated diet plan to database"""
         try:
+            self._ensure_conn()
             # Calculate week dates
             today = datetime.now().date()
             week_start = today
@@ -533,6 +559,7 @@ class diet_plan_model():
     def get_diet_plans(self, user_id):
         """Get existing diet plans for a user"""
         try:
+            self._ensure_conn()
             # Check for existing plan in database
             query = """
             SELECT planId, generatedDate, weekStartDate, weekEndDate, targetCalories
@@ -675,6 +702,7 @@ class diet_plan_model():
     def get_weekly_diet_plan(self, user_id):
         """Get full weekly diet plan for a user"""
         try:
+            self._ensure_conn()
             # Check for existing plan in database
             query = """
             SELECT planId, generatedDate, weekStartDate, weekEndDate, targetCalories, planData
@@ -763,6 +791,7 @@ class diet_plan_model():
     def get_meal_details(self, user_id, meal_id):
         """Get detailed information for a specific meal"""
         try:
+            self._ensure_conn()
             # Check if the meal belongs to the user and get all details
             query = """
             SELECT m.*, dp.userId
@@ -851,6 +880,7 @@ class diet_plan_model():
     def mark_meal_completed(self, user_id, meal_id):
         """Set Meal.isCompleted 1 (idempotent)."""
         try:
+            self._ensure_conn()
             # make sure the meal belongs to the user
             self.cur.execute(
                 """
@@ -882,3 +912,79 @@ class diet_plan_model():
         except Exception as e:
             print("Error marking meal:", e)
             return make_response({"message": f"Error: {e}"}, 500)
+            
+    def get_all_diet_plan_meals(self, user_id):
+        """Get all meals from the current diet plan grouped by day"""
+        try:
+            self._ensure_conn()
+            
+            # Get the latest diet plan
+            query = """
+            SELECT planId, generatedDate, weekStartDate, weekEndDate, targetCalories
+            FROM DietPlan
+            WHERE userId = %s
+            ORDER BY generatedDate DESC
+            LIMIT 1
+            """
+            self.cur.execute(query, (user_id,))
+            plan_data = self.cur.fetchone()
+            
+            if not plan_data:
+                return make_response({"message": "No diet plan found"}, 404)
+            
+            plan_id = plan_data['planId']
+            
+            # Get all meals grouped by day
+            query = """
+            SELECT mealId, dayOfWeek, mealType, name, description, portion, 
+                calories, protein, carbs, fat, isCompleted, summary
+            FROM Meal
+            WHERE planId = %s
+            ORDER BY dayOfWeek, 
+                    FIELD(mealType, 'breakfast', 'morning_snack', 'lunch', 
+                        'afternoon_snack', 'dinner', 'supper')
+            """
+            self.cur.execute(query, (plan_id,))
+            all_meals = self.cur.fetchall()
+            
+            # Group meals by day
+            days_data = {}
+            days_of_week = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday']
+            
+            for meal in all_meals:
+                day_num = meal['dayOfWeek']
+                if day_num not in days_data:
+                    days_data[day_num] = {
+                        'dayNumber': day_num,
+                        'dayName': days_of_week[day_num - 1],
+                        'meals': []
+                    }
+                
+                meal_info = {
+                    'id': meal['mealId'],
+                    'name': meal['name'],
+                    'mealType': meal['mealType'],
+                    'portion': float(meal['portion']),
+                    'summary': meal.get('summary', meal['description']),
+                    'calories': round(meal['calories']),
+                    'protein': round(meal['protein'], 1),
+                    'carbs': round(meal['carbs'], 1),
+                    'fat': round(meal['fat'], 1),
+                    'isCompleted': bool(meal['isCompleted'])
+                }
+                days_data[day_num]['meals'].append(meal_info)
+            
+            # Convert to list sorted by day
+            result = sorted(days_data.values(), key=lambda x: x['dayNumber'])
+            
+            return make_response({
+                "message": "Diet plan meals retrieved successfully",
+                "weekStartDate": str(plan_data['weekStartDate']),
+                "weekEndDate": str(plan_data['weekEndDate']),
+                "targetCalories": plan_data['targetCalories'],
+                "days": result
+            }, 200)
+            
+        except Exception as e:
+            print(f"Error getting all diet plan meals: {str(e)}")
+            return make_response({"message": f"Error retrieving meals: {str(e)}"}, 500)

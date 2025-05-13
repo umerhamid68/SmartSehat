@@ -131,6 +131,7 @@ export default function UserProfile() {
     const signOut = async () => {
         try {
             await AsyncStorage.removeItem('jwt_token');
+            router.dismissAll();
             router.replace('/userLogin');
         } catch (error) {
             console.error('Error during sign out:', error);

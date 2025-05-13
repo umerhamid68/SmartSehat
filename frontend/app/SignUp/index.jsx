@@ -118,7 +118,7 @@ const submitForm = async () => {
               Alert.alert('Success', 'Account created successfully. Please fill in your medical history.', [
                   {
                       text: 'OK',
-                      onPress: () => router.push('/medicalHistory'), // Redirect to medical history page
+                      onPress: () => router.replace('/medicalHistory'), // Redirect to medical history page
                   },
               ]);
           } else if (response.status === 204) {

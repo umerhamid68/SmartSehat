@@ -606,3 +606,117 @@ class scan_model():
         )
 
         return jsonify(result), 200
+
+
+    def get_scan_history(self, user_id):
+        """Get scan history for a user"""
+        try:
+            query = """
+            SELECT scanId, scanDate, scanResult
+            FROM FoodScan
+            WHERE userId = %s
+            ORDER BY scanDate DESC, scanId DESC
+            """
+            self.cur.execute(query, (user_id,))
+            scans = self.cur.fetchall()
+            
+            formatted_scans = []
+            for scan in scans:
+                try:
+                    scan_result = json.loads(scan['scanResult'])
+                    
+                    scan_info = {
+                        'scanId': scan['scanId'],
+                        'scanDate': scan['scanDate'].strftime('%Y-%m-%d'),
+                        'type': 'unknown',
+                        'title': 'Unknown Scan',
+                        'details': {},
+                        'hasError': False
+                    }
+                    
+                    # Handle error cases
+                    if 'error' in scan_result:
+                        scan_info['type'] = 'error'
+                        scan_info['title'] = 'Scan Error'
+                        scan_info['hasError'] = True
+                        scan_info['details'] = {
+                            'errorMessage': scan_result['error']
+                        }
+                    # Handle meal scans (with or without scanType)
+                    elif 'meal' in scan_result or (scan_result.get('scanType') == 'meal'):
+                        scan_info['type'] = 'meal'
+                        meal_name = scan_result.get('mealName') or scan_result.get('meal', {}).get('name', 'Unknown Meal')
+                        scan_info['title'] = meal_name
+                        scan_info['details'] = {
+                            'mealName': meal_name
+                        }
+                        # Add safety info if available
+                        if 'gptSafetyResult' in scan_result:
+                            safety_result = scan_result['gptSafetyResult']
+                            scan_info['details']['safetyRating'] = safety_result.get('safetyRating', 'N/A')
+                            scan_info['details']['safetyScore'] = safety_result.get('safetyScore', 'N/A')
+                    # Handle product scans
+                    elif scan_result.get('scanType') == 'product':
+                        scan_info['type'] = 'product'
+                        scan_info['title'] = scan_result.get('productName', 'Unknown Product')
+                        scan_info['details'] = {
+                            'productName': scan_result.get('productName', 'Unknown'),
+                            'ingredientCount': len(scan_result.get('ingredients', [])),
+                            'calories': scan_result.get('calories', 'N/A')
+                        }
+                        # Add safety info if available
+                        if 'gptSafetyResult' in scan_result:
+                            safety_result = scan_result['gptSafetyResult']
+                            scan_info['details']['safetyRating'] = safety_result.get('safetyRating', 'N/A')
+                            scan_info['details']['safetyScore'] = safety_result.get('safetyScore', 'N/A')
+                    # Handle standalone ingredients (no scanType)
+                    elif 'ingredients' in scan_result and 'scanType' not in scan_result:
+                        scan_info['type'] = 'ingredients'
+                        ingredients = scan_result['ingredients']
+                        scan_info['title'] = f"{len(ingredients)} Ingredients"
+                        scan_info['details'] = {
+                            'count': len(ingredients),
+                            'sample': ingredients[:3] if len(ingredients) > 0 else [],
+                            'allIngredients': ingredients
+                        }
+                    # Handle nutrition label scans
+                    elif 'nutrition' in scan_result:
+                        scan_info['type'] = 'nutrition'
+                        scan_info['title'] = 'Nutrition Label'
+                        nutrition = scan_result['nutrition']
+                        scan_info['details'] = {
+                            'calories': nutrition.get('calories', 'N/A'),
+                            'servingSize': nutrition.get('servingSize', 'N/A'),
+                            'totalFat': nutrition.get('totalFat', 'N/A'),
+                            'fullNutrition': nutrition
+                        }
+                    # Unknown scan type
+                    else:
+                        scan_info['type'] = 'unknown'
+                        scan_info['title'] = 'Unknown Scan Type'
+                        scan_info['details'] = {
+                            'rawData': scan_result
+                        }
+                    
+                    formatted_scans.append(scan_info)
+                    
+                except Exception as parse_error:
+                    # Handle JSON parsing errors
+                    formatted_scans.append({
+                        'scanId': scan['scanId'],
+                        'scanDate': scan['scanDate'].strftime('%Y-%m-%d'),
+                        'type': 'error',
+                        'title': 'Invalid Scan Data',
+                        'details': {
+                            'errorMessage': f"Failed to parse scan data: {str(parse_error)}"
+                        },
+                        'hasError': True
+                    })
+            
+            return jsonify({
+                "scans": formatted_scans,
+                "total": len(formatted_scans)
+            }), 200
+            
+        except Exception as e:
+            return jsonify({"error": str(e)}), 500

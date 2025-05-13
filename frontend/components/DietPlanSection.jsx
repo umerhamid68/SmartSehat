@@ -14,6 +14,7 @@ import { useRouter } from 'expo-router';
 import { FontAwesome } from '@expo/vector-icons';
 import { API_URL } from '../constants';
 import { useFocusEffect } from '@react-navigation/native';
+import DietPlanLoadingModal from './DietPlanLoadingOverlay';
 
 // API URL - update with your actual backend URL
 const API_BASE_URL = API_URL;
@@ -28,6 +29,7 @@ const DietPlanSection = () => {
   const [selectedMealTime, setSelectedMealTime] = useState('morning');
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const [generatingPlan, setGeneratingPlan] = useState(false);
 
   useEffect(() => {
     fetchDietPlans();
@@ -99,6 +101,7 @@ const DietPlanSection = () => {
 
   const generateNewDietPlan = async (token) => {
     try {
+      setGeneratingPlan(true); // Add this line
       const response = await fetch(`${API_BASE_URL}/diet/generate`, {
         method: 'POST',
         headers: {
@@ -122,6 +125,7 @@ const DietPlanSection = () => {
     } catch (error) {
       console.error('Error generating diet plan:', error);
     } finally {
+      setGeneratingPlan(false); // Add this line
       setLoading(false);
       setRefreshing(false);
     }
@@ -245,6 +249,8 @@ const DietPlanSection = () => {
   };
 
   return (
+    <>
+    <DietPlanLoadingModal visible={generatingPlan} />
     <View style={styles.container}>
       <View style={styles.header}>
         <Text style={styles.sectionTitle}>Today's Diet Plans</Text>
@@ -294,6 +300,7 @@ const DietPlanSection = () => {
         {renderDietPlans()}
       </ScrollView>
     </View>
+    </>
   );
 };
 

@@ -3,9 +3,10 @@ import { View, Text, TextInput, TouchableOpacity, FlatList, StyleSheet ,Keyboard
 import { FontAwesome } from '@expo/vector-icons';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { API_URL } from '../../constants';
 
 //const apiKey = 'b9810cbd4d7e2d693c4d398deb7a73456af29c637ce82f8c6abbc1a9ac1440d3'; // Replace with your actual API key
-const apiUrl = 'http://192.168.1.106:5000/api/chat'; // Replace with your actual API endpoint
+const apiUrl = API_URL + '/chat' // Replace with your actual API endpoint
 
 export default function ChatBot() {
   const router = useRouter();
