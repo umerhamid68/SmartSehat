@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { 
   View, 
   Text, 
@@ -13,6 +13,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useRouter } from 'expo-router';
 import { FontAwesome } from '@expo/vector-icons';
 import { API_URL } from '../constants';
+import { useFocusEffect } from '@react-navigation/native';
 
 // API URL - update with your actual backend URL
 const API_BASE_URL = API_URL;
@@ -41,6 +42,13 @@ const DietPlanSection = () => {
       setSelectedMealTime('night');
     }
   }, []);
+ 
+  useFocusEffect(
+    useCallback(() => {
+      fetchDietPlans();
+    }, [])
+  );
+  
 
   const fetchDietPlans = async () => {
     try {

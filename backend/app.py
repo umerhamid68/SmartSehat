@@ -15,6 +15,7 @@ try:
     from controllers.scan_controller import *
     from controllers.chat_controller import *
     from controllers.diet_plan_controller import *
+    print("Diet plan controller imported successfully")
 
 except Exception as e:
     print(f"Error importing controllers: {e}")

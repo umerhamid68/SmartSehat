@@ -22,8 +22,24 @@ from diet_recommendation.pakistani_recipes_integration_via_agent import (
 # Path to saved model components
 MODEL_DIR = os.path.join(os.path.dirname(__file__), '../models/diet_model')
 
+
+# ------------------------------------------------------------------
+# 🔧  LOCAL TEST SWITCHES  🔧
+# ------------------------------------------------------------------
+from datetime import date, timedelta
+
+# 1) Move "today" N days forward/backward
+TEST_OFFSET_DAYS = 0        # +3 → jump 3 days ahead,  -2 → 2 days back
+
+# 2) Or pin "today" to an absolute calendar date     (overrides offset)
+TEST_STATIC_DATE = None     # e.g., date(2025, 5, 20)
+# ------------------------------------------------------------------
+
+
+
 class diet_plan_model():
     def __init__(self):
+        print("DEBUG: Starting diet_plan_model initialization")
         # Database connection
         self.con = mysql.connector.connect(
             host=dbconfig['host'],
@@ -33,10 +49,12 @@ class diet_plan_model():
         )
         self.con.autocommit = True
         self.cur = self.con.cursor(dictionary=True)
+        print("DEBUG: Database connected")
         
         # Load model components
         try:
             self.load_model_components()
+            print("DEBUG: Model components loaded successfully")
         except Exception as e:
             print(f"Error loading model components: {str(e)}")
     def _parse_list_field(self, value):
@@ -386,7 +404,7 @@ class diet_plan_model():
                     if has_ingredients and has_instructions and has_summary and has_nutrition_details:
                         meal_query = """
                         INSERT INTO Meal 
-                        (planId, dayOfWeek, mealType, name, description, portion, calories, protein, carbs, fat, 
+                        (planId, dayOfWeek, mealType, name, description, portion, calories, protein, carbs, fat,
                          ingredients, instructions, summary, nutritionDetails)
                         VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                         """
@@ -424,6 +442,7 @@ class diet_plan_model():
                             float(meal.get('protein', 0)),
                             float(meal.get('carbohydrate', 0)),
                             float(meal.get('fat', 0))
+
                         )
                     
                     self.cur.execute(meal_query, meal_values)
@@ -486,7 +505,7 @@ class diet_plan_model():
                     'ingredients': ingredients if isinstance(ingredients, list) else [],
                     'instructions': instructions if isinstance(instructions, list) else [],
                     'nutrition_details': meal.get('nutrition_details', {}),
-                    'is_completed': False
+                    "is_completed": bool(meal.get("isCompleted", 0)),
                 }
                 
                 # Add to appropriate time category
@@ -543,7 +562,7 @@ class diet_plan_model():
             columns = [col['Field'] for col in self.cur.fetchall()]
             
             # Build the query dynamically based on available columns
-            base_columns = ['mealId', 'dayOfWeek', 'mealType', 'name', 'description', 'calories', 'protein', 'carbs', 'fat']
+            base_columns = ['mealId', 'dayOfWeek', 'mealType', 'name', 'description', 'calories', 'protein', 'carbs', 'fat', 'isCompleted']
             additional_columns = []
             
             if 'ingredients' in columns:
@@ -557,15 +576,28 @@ class diet_plan_model():
             
             all_columns = base_columns + additional_columns
             column_str = ', '.join(all_columns)
+
+            # today       = datetime.now().date()
+            if TEST_STATIC_DATE is not None:
+                today = TEST_STATIC_DATE
+            else:
+                today = datetime.now().date() + timedelta(days=TEST_OFFSET_DAYS)
+            week_start  = datetime.strptime(str(plan_data['weekStartDate']), '%Y-%m-%d').date()
+            day_offset  = (today - week_start).days           # 0‑based
+            if day_offset < 0 or day_offset > 6:
+                # we’re outside this plan’s range ⇒ make a new plan
+                return self.generate_diet_plan(user_id)
+
+            day_of_week = day_offset + 1
             
             # Get meals grouped by time of day
             query = f"""
             SELECT {column_str}
             FROM Meal
-            WHERE planId = %s AND dayOfWeek = 1  -- First day of the week
+            WHERE planId = %s AND dayOfWeek = %s  -- First day of the week
             ORDER BY mealType
             """
-            self.cur.execute(query, (plan_id,))
+            self.cur.execute(query, (plan_id, day_of_week))
             meals = self.cur.fetchall()
             
             # Format for frontend
@@ -620,7 +652,7 @@ class diet_plan_model():
                     'ingredients': ingredients,
                     'instructions': instructions,
                     'nutrition_details': nutrition_details,
-                    'is_completed': False
+                    'is_completed': bool(meal.get("isCompleted", 0)), 
                 }
                 
                 # Add to appropriate time category
@@ -762,7 +794,7 @@ class diet_plan_model():
                 'ingredients': [],
                 'instructions': [],
                 'nutrition_details': {},
-                'is_completed': False
+                "is_completed": bool(meal_data.get("isCompleted", 0)),
             }
             
             # Process ingredients
@@ -792,27 +824,61 @@ class diet_plan_model():
             print(f"Error getting meal details: {str(e)}")
             return make_response({"message": f"Error retrieving meal details: {str(e)}"}, 500)
 
-    def mark_meal_completed(self, user_id, meal_id):
-        """Mark a specific meal as completed"""
-        try:
-            # Check if the meal belongs to the user
-            query = """
-            SELECT m.mealId
-            FROM Meal m
-            JOIN DietPlan dp ON m.planId = dp.planId
-            WHERE dp.userId = %s AND m.mealId = %s
-            """
-            self.cur.execute(query, (user_id, meal_id))
-            result = self.cur.fetchone()
+    # def mark_meal_completed(self, user_id, meal_id):
+    #     """Mark a specific meal as completed"""
+    #     try:
+    #         # Check if the meal belongs to the user
+    #         query = """
+    #         SELECT m.mealId
+    #         FROM Meal m
+    #         JOIN DietPlan dp ON m.planId = dp.planId
+    #         WHERE dp.userId = %s AND m.mealId = %s
+    #         """
+    #         self.cur.execute(query, (user_id, meal_id))
+    #         result = self.cur.fetchone()
             
-            if not result:
-                return make_response({"message": "Meal not found or does not belong to user"}, 404)
+    #         if not result:
+    #             return make_response({"message": "Meal not found or does not belong to user"}, 404)
             
-            # Update completion status - this would require a separate table
-            # For now, we'll just return success without actually storing the status
+    #         # Update completion status - this would require a separate table
+    #         # For now, we'll just return success without actually storing the status
             
-            return make_response({"message": "Meal marked as completed"}, 200)
+    #         return make_response({"message": "Meal marked as completed"}, 200)
         
+    #     except Exception as e:
+    #         print(f"Error marking meal as completed: {str(e)}")
+    #         return make_response({"message": f"Error updating meal status: {str(e)}"}, 500)
+    def mark_meal_completed(self, user_id, meal_id):
+        """Set Meal.isCompleted 1 (idempotent)."""
+        try:
+            # make sure the meal belongs to the user
+            self.cur.execute(
+                """
+                SELECT 1
+                FROM Meal m
+                JOIN DietPlan dp ON m.planId = dp.planId
+                WHERE dp.userId = %s AND m.mealId = %s
+                """,
+                (user_id, meal_id),
+            )
+            if not self.cur.fetchone():
+                return make_response(
+                    {"message": "Meal not found or does not belong to user"}, 404
+                )
+
+            # update flag
+            self.cur.execute(
+                """
+                UPDATE Meal m
+                JOIN DietPlan dp ON m.planId = dp.planId
+                SET m.isCompleted = 1
+                WHERE dp.userId = %s AND m.mealId = %s
+                """,
+                (user_id, meal_id),
+            )
+
+            return make_response({"message": "Meal marked as completed"}, 200)
+
         except Exception as e:
-            print(f"Error marking meal as completed: {str(e)}")
-            return make_response({"message": f"Error updating meal status: {str(e)}"}, 500)
+            print("Error marking meal:", e)
+            return make_response({"message": f"Error: {e}"}, 500)

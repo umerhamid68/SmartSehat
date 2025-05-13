@@ -111,7 +111,6 @@ class user_model():
                 "iat": int(datetime.utcnow().timestamp()),   # issued‑at  (nice to have)
                 "exp": int(exptime.timestamp())              # expires‑at
             }
-            print(int(exp_epoc_time))
             jwt_token = jwt.encode(data, "ali@123", algorithm="HS256")
             return make_response({"token":jwt_token}, 200)
         else:

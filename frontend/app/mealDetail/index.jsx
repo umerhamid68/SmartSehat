@@ -547,7 +547,7 @@ export default function MealDetail() {
         setError('Authentication token not found');
         return;
       }
-
+  
       const res = await fetch(`${API_BASE_URL}/diet/meal/complete`, {
         method: 'POST',
         headers: {
@@ -556,10 +556,15 @@ export default function MealDetail() {
         },
         body: JSON.stringify({ mealId }),
       });
-
+  
       if (!res.ok) throw new Error(`HTTP error ${res.status}`);
-
+  
+      // ✅ locally reflect the change
       setMeal((prev) => ({ ...prev, is_completed: true }));
+  
+      // ✅ go back – DietPlanSection will auto‑refresh on focus
+      router.back();
+  
     } catch (err) {
       console.error('Error marking meal as completed:', err);
       setError('Failed to mark meal as completed');

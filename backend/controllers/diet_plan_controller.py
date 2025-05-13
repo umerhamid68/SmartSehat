@@ -1,3 +1,4 @@
+print("DEBUG: Starting diet_plan_controller import")
 from flask import request, make_response, jsonify
 from app import app
 from models.diet_plan_model import diet_plan_model
@@ -5,7 +6,9 @@ from models.auth_model import auth_model
 import jwt
 import re
 
+print("DEBUG: Creating diet_plan_obj")
 diet_plan_obj = diet_plan_model()
+print("DEBUG: diet_plan_obj created successfully")
 auth = auth_model()
 
 def extract_user_info_from_token():
@@ -36,21 +39,27 @@ def generate_diet_plan():
 @auth.token_auth()
 def get_diet_plans():
     """Get daily diet plans for the authenticated user."""
-    userId = extract_user_info_from_token()
-    if not userId:
-        return make_response({"message": "INVALID_TOKEN"}, 401)
-    
-    # Get the diet plans
-    response = diet_plan_obj.get_diet_plans(userId)
-    
-    # Extract the plan data from the response
-    if hasattr(response, 'get_json'):
-        data = response.get_json()
-        if 'plan' in data:
-            return jsonify({"plans": data['plan']})
-    
-    # Return the original response if extraction fails
-    return response
+    try:
+        userId = extract_user_info_from_token()
+        if not userId:
+            return make_response({"message": "INVALID_TOKEN"}, 401)
+        
+        # Get the diet plans
+        response = diet_plan_obj.get_diet_plans(userId)
+        
+        # Extract the plan data from the response
+        if hasattr(response, 'get_json'):
+            data = response.get_json()
+            if 'plan' in data:
+                return jsonify({"plans": data['plan']})
+        
+        # Return the original response if extraction fails
+        return response
+    except Exception as e:
+        print(f"Error in get_diet_plans: {str(e)}")
+        import traceback
+        traceback.print_exc()
+        return make_response({"message": f"Error: {str(e)}"}, 500)
 
 @app.route("/api/diet/weekly", methods=["GET"])
 @auth.token_auth()
