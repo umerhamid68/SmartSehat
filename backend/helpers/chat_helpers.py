@@ -1,45 +1,38 @@
 # helpers/chat_helpers.py
 import json
-import nltk
-nltk.download('punkt')
-nltk.download('wordnet')
-nltk.download('omw-1.4')
-from nltk.tokenize import word_tokenize
-from nltk.stem import WordNetLemmatizer
-import matplotlib.pyplot as plt
 import io
 import base64
-
-lemmatizer = WordNetLemmatizer()
+import matplotlib.pyplot as plt
 
 def is_meal_update_command(message: str) -> bool:
-    tokens = word_tokenize(message.lower())
-    lemmas = [lemmatizer.lemmatize(token) for token in tokens]
+    message = message.lower()
 
-    intent_keywords = {"replace", "change", "swap", "update", "new", "different", "another"}
-    meal_keywords = {"breakfast", "lunch", "dinner", "snack", "supper", "meal"}
+    intent_keywords = ["replace", "change", "swap", "update", "different", "new", "another"]
+    meal_keywords = ["breakfast", "lunch", "dinner", "supper", "snack", "meal"]
 
-    found_intent = any(word in intent_keywords for word in lemmas)
-    found_meal = any(word in meal_keywords for word in tokens)
+    found_intent = any(word in message for word in intent_keywords)
+    found_meal = any(word in message for word in meal_keywords)
 
     return found_intent and found_meal
 
 def extract_meal_type(message: str) -> str | None:
-    tokens = word_tokenize(message.lower())
+    message = message.lower()
+
     meal_map = {
         "breakfast": "breakfast",
         "lunch": "lunch",
         "dinner": "dinner",
         "supper": "dinner",
         "snack": "snack",
-        "meal": None
+        "meal": None  # fallback
     }
 
-    for token in tokens:
-        if token in meal_map:
-            return meal_map[token]
+    for word in meal_map:
+        if word in message:
+            return meal_map[word]
 
     return None
+
 def generate_visualization(visualization_data):
     """Generate a chart based on the provided visualization data."""
     if not visualization_data.get('values'):
