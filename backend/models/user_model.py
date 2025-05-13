@@ -105,11 +105,11 @@ class user_model():
         self.cur.execute(f"SELECT userid, email from user WHERE email='{username}' and password='{password}'")
         result = self.cur.fetchall()
         if len(result)==1:
-            exptime = datetime.now() + timedelta(minutes=15)
-            exp_epoc_time = exptime.timestamp()
+            exptime = datetime.utcnow() + timedelta(days=7)
             data = {
-                "payload":result[0],
-                "exp":int(exp_epoc_time)
+                "payload": result[0],
+                "iat": int(datetime.utcnow().timestamp()),   # issued‑at  (nice to have)
+                "exp": int(exptime.timestamp())              # expires‑at
             }
             print(int(exp_epoc_time))
             jwt_token = jwt.encode(data, "ali@123", algorithm="HS256")
