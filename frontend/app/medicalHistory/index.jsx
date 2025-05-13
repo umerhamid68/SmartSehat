@@ -8,6 +8,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { API_URL } from '../../constants';
 
 const API_BASE_URL = API_URL;
+const api_prefix = 'api'
 
 export default function MedicalHistory() {
     const [selectedDisease, setSelectedDisease] = useState('heart');
