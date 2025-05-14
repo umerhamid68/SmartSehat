@@ -25,7 +25,7 @@ class scan_model():
 
         with open("./system_prompt.txt", "r") as file:
             self.system_prompt = file.read()
-        with open("./system_prompt_2.txt", "r") as file:
+        with open("./system_prompt_3.txt", "r") as file:
             self.system_prompt_2 = file.read()
 
 
@@ -44,6 +44,155 @@ class scan_model():
             return json.loads(response_text)
         except json.JSONDecodeError:
             return None
+
+
+    def get_user_context(self, user_id):
+        """Get complete user context including medical history, metrics, and today's diet plan"""
+        try:
+            # Get medical history
+            medical_query = """
+            SELECT m.*,
+                hd.severity AS heart_severity,
+                hd.stentInserted,
+                hd.openHeartSurgery,
+                hd.cholesterolLevel,
+                hd.hypertension,
+                hd.smoking,
+                hd.diabetesExpectancy,
+                d.type AS diabetesType,
+                d.bloodSugarLevel,
+                d.a1cLevel,
+                d.insulinUsage,
+                d.insulinDependency,
+                fl.liverEnzymes,
+                fl.fibrosisStage,
+                fl.steatosisGrade,
+                fl.severity AS liver_severity
+            FROM medicalhistory m
+            LEFT JOIN heartdisease hd ON m.historyid = hd.historyid
+            LEFT JOIN diabetes d ON m.historyid = d.historyid
+            LEFT JOIN fattyliver fl ON m.historyid = fl.historyid
+            WHERE m.userId = %s
+            ORDER BY m.historyid DESC
+            LIMIT 1
+            """
+            self.cur.execute(medical_query, (user_id,))
+            medical_history = self.cur.fetchone()
+            
+            # Get user metrics
+            metrics_query = """
+            SELECT bmr, bmi, targetEnergyIntake, pal
+            FROM UserMetrics
+            WHERE userId = %s
+            ORDER BY metricId DESC
+            LIMIT 1
+            """
+            self.cur.execute(metrics_query, (user_id,))
+            user_metrics = self.cur.fetchone()
+            
+            # Get today's diet plan meals
+            today = datetime.now().date()
+            
+            diet_query = """
+            SELECT m.name, m.mealType, m.calories, m.protein, m.carbs, m.fat, m.isCompleted
+            FROM Meal m
+            JOIN DietPlan dp ON m.planId = dp.planId
+            WHERE dp.userId = %s 
+            AND dp.weekStartDate <= %s 
+            AND dp.weekEndDate >= %s
+            AND m.dayOfWeek = DAYOFWEEK(%s)
+            ORDER BY FIELD(m.mealType, 'breakfast', 'morning_snack', 'lunch', 
+                        'afternoon_snack', 'dinner', 'supper')
+            """
+            self.cur.execute(diet_query, (user_id, today, today, today))
+            today_meals = self.cur.fetchall()
+            
+            # Calculate consumed nutrients for today
+            consumed_calories = 0
+            consumed_protein = 0
+            consumed_carbs = 0
+            consumed_fat = 0
+            
+            for meal in today_meals:
+                if meal['isCompleted']:
+                    consumed_calories += meal['calories']
+                    consumed_protein += meal['protein']
+                    consumed_carbs += meal['carbs']
+                    consumed_fat += meal['fat']
+            
+            context = {
+                "medical_history": medical_history,
+                "user_metrics": user_metrics,
+                "today_meals": today_meals,
+                "consumed_nutrients": {
+                    "calories": consumed_calories,
+                    "protein": consumed_protein,
+                    "carbs": consumed_carbs,
+                    "fat": consumed_fat
+                },
+                "remaining_calories": float(user_metrics['targetEnergyIntake']) - consumed_calories if user_metrics else 0
+            }
+            
+            return context
+            
+        except Exception as e:
+            print(f"Error getting user context: {str(e)}")
+            return None
+
+    def format_context_for_prompt(self, context):
+        """Format user context into a readable prompt section"""
+        if not context:
+            return ""
+        
+        prompt_context = "\n\nUSER HEALTH CONTEXT:\n"
+        
+        # Add medical history
+        if context['medical_history']:
+            med = context['medical_history']
+            prompt_context += f"Medical Profile: {med['diseaseType']} patient, "
+            prompt_context += f"{med['gender']}, age {med['age']}, "
+            prompt_context += f"height {med['height']}cm, weight {med['weight']}kg\n"
+            
+            # Add disease-specific information
+            if med['diseaseType'] == 'heart':
+                prompt_context += f"Heart Condition: "
+                if med.get('severity'):
+                    prompt_context += f"Severity: {med['severity']}, "
+                if med.get('hypertension'):
+                    prompt_context += f"Hypertension: {'Yes' if med['hypertension'] else 'No'}, "
+                if med.get('cholesterolLevel'):
+                    prompt_context += f"Cholesterol: {med['cholesterolLevel']}, "
+                if med.get('smoking'):
+                    prompt_context += f"Smoking: {'Yes' if med['smoking'] else 'No'}\n"
+            elif med['diseaseType'] == 'diabetes':
+                prompt_context += f"Diabetes: Type {med.get('diabetesType', 'Unknown')}, "
+                if med.get('bloodSugarLevel'):
+                    prompt_context += f"Blood Sugar: {med['bloodSugarLevel']}, "
+                if med.get('a1cLevel'):
+                    prompt_context += f"A1C: {med['a1cLevel']}\n"
+        
+        # Add user metrics
+        if context['user_metrics']:
+            metrics = context['user_metrics']
+            prompt_context += f"\nHealth Metrics: BMI {metrics['bmi']}, BMR {metrics['bmr']}, "
+            prompt_context += f"Daily Target Calories: {metrics['targetEnergyIntake']}\n"
+        
+        # Add today's diet information
+        if context['today_meals']:
+            prompt_context += f"\nToday's Diet Plan:\n"
+            for meal in context['today_meals']:
+                status = "✓ Completed" if meal['isCompleted'] else "Pending"
+                prompt_context += f"- {meal['mealType'].title()}: {meal['name']} "
+                prompt_context += f"({meal['calories']} cal) [{status}]\n"
+        
+        # Add consumed nutrients
+        if context['consumed_nutrients']:
+            consumed = context['consumed_nutrients']
+            prompt_context += f"\nAlready Consumed Today: {consumed['calories']} calories, "
+            prompt_context += f"{consumed['protein']}g protein, {consumed['carbs']}g carbs, {consumed['fat']}g fat\n"
+            prompt_context += f"Remaining Calorie Budget: {context['remaining_calories']} calories\n"
+        
+        return prompt_context
 
     def analyze_image_with_gpt(self, image_bytes, prompt):
         try:
@@ -414,6 +563,10 @@ class scan_model():
         
         if not scan_id:
             return jsonify({"error": "No scanId provided"}), 400
+
+        user_context = self.get_user_context(user_id)
+        context_prompt = self.format_context_for_prompt(user_context)
+        print("Context Prompt:", context_prompt)
             
         # First, retrieve the saved scan result
         try:
@@ -450,16 +603,17 @@ class scan_model():
                 return jsonify({"error": "No nutrition data in matched recipe"}), 404
 
             # Perform safety analysis with GPT
-            prompt = f"""Analyze this meal and provide safety assessment in JSON format:
+            prompt = f"""Analyze this meal based on the user's health context and provide safety assessment in JSON format:
             Meal: {matched_recipe["name"]}
             Nutrition: {json.dumps(recipe_nutrition)}
             {{
                 "safetyScore": "number 1-10",
                 "safetyRating": "safe/unsafe"
             }}
-            IMPORTANT: PLEASE DO NOT INCLUDE ANY OTHER INFORMATION IN THE RESPONSE. KEEP IT PURELY JSON.
+            USER CONTEXT:
+            {context_prompt}
 
-            Note: Obviously high sodium and high sugar content are bad for health. So items with such things will rank very low as compared to others.
+            IMPORTANT: PLEASE DO NOT INCLUDE ANY OTHER INFORMATION IN THE RESPONSE. KEEP IT PURELY JSON.
             """
             response = self.client.chat.completions.create(
                 model="meta-llama/Llama-3.3-70B-Instruct-Turbo",
@@ -536,6 +690,9 @@ class scan_model():
         scan_id = data.get('scanId')
         if not scan_id:
             return jsonify({"error": "No scanId provided"}), 400
+        
+        user_context = self.get_user_context(user_id)
+        context_prompt = self.format_context_for_prompt(user_context)
 
         prompt = f"""Analyze this product data and provide safety assessment in JSON format:
         Product: {product_name}
@@ -543,16 +700,15 @@ class scan_model():
         Nutrition: {json.dumps(nutrition)}
         Calories: {calories}
 
+        USER CONTEXT:
+        {context_prompt}
+
         Response format:
         {{
             "safetyScore": "number 1-10",
             "safetyRating": "safe/unsafe"
         }}
         IMPORTANT: PLEASE DO NOT INCLUDE ANY OTHER INFORMATION. KEEP IT PURELY JSON.
-
-        Note: Obviously high sodium and high sugar content are bad for health. So items with such things will rank very low as compared to others.
-
-        DO NOT GIVE 4 RATING FOR ANY PRODUCT ALSO. GIVE LOWER OR HIGHER. FOR EXAMPLE, IF A PRODUCT IS NOODLES WITH HIGH SODIUMS, GIVE A RATING OF 2.
         """
         response = self.client.chat.completions.create(
             model="meta-llama/Llama-3.3-70B-Instruct-Turbo",

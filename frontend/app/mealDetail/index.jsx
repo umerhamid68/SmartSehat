@@ -644,8 +644,8 @@ export default function MealDetail() {
 
         {/* Portion size */}
         <View style={styles.sectionContainer}>
-          <Text style={styles.sectionTitle}>Portion Size</Text>
-          <Text style={styles.description}>{meal.portion}</Text>
+          <Text style={styles.sectionTitle}>Portion Size For This Recipe</Text>
+          <Text style={styles.description}>{meal.portion} servings</Text>
         </View>
 
         {/* Nutrition */}
