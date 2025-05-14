@@ -12,7 +12,7 @@ from configs.config import dbconfig
 
 class scan_model():
     def __init__(self):
-        self.client = Together(api_key=os.environ.get("TOGETHER_API_KEY"))
+        self.client = Together(api_key="63269cd907596d9c031586061650084b73002400f24d0e1898d65edca00cc443")
 
         self.con = mysql.connector.connect(
             host=dbconfig['host'],
