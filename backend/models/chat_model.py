@@ -87,6 +87,8 @@ class chat_model():
 
         user_profile = self.diet_model.get_user_profile(userId)
         replacement = self.find_similar_meal(meal_to_replace, user_profile)
+        print(f"Substituting meal ID {meal_to_replace['id']} with {replacement['title']}")
+
 
         if not replacement:
             return jsonify({"message": "Couldn't find a suitable replacement meal."}), 500
@@ -131,39 +133,89 @@ class chat_model():
             print(f"Error finding replacement meal: {e}")
             return None
 
-    def update_meal_in_db(self, user_id, meal_id, new_meal):
-        try:
-            self.diet_model.cur.execute("""
-                UPDATE Meal
-                SET name = %s,
-                    description = %s,
-                    portion = %s,
-                    calories = %s,
-                    protein = %s,
-                    carbs = %s,
-                    fat = %s,
-                    ingredients = %s,
-                    instructions = %s,
-                    summary = %s,
-                    nutritionDetails = %s,
-                    imageUrl = %s
-                WHERE mealId = %s
-            """, (
-                new_meal.get('title', 'Updated Meal'),
-                f"Portion: {new_meal.get('portion', 1.0):.2f}",
-                new_meal.get('portion', 1.0),
-                new_meal.get('kcal', 0),
-                new_meal.get('protein', 0),
-                new_meal.get('carbohydrate', 0),
-                new_meal.get('fat', 0),
-                new_meal.get('ingredients', ''),
-                new_meal.get('instructions', ''),
-                new_meal.get('summary', ''),
-                json.dumps(new_meal.get('nutritionDetails', {})),
-                new_meal.get('imageUrl', None),
-                meal_id
-            ))
-            return True
-        except Exception as e:
-            print(f"Error updating meal in DB: {e}")
+def update_meal_in_db(self, user_id, meal_id, new_meal):
+    try:
+        # 1. Update the specific meal
+        self.diet_model.cur.execute("""
+            UPDATE Meal
+            SET name = %s,
+                description = %s,
+                portion = %s,
+                calories = %s,
+                protein = %s,
+                carbs = %s,
+                fat = %s,
+                ingredients = %s,
+                instructions = %s,
+                summary = %s,
+                nutritionDetails = %s,
+                imageUrl = %s
+            WHERE mealId = %s
+        """, (
+            new_meal.get('title', 'Updated Meal'),
+            f"Portion: {new_meal.get('portion', 1.0):.2f}",
+            new_meal.get('portion', 1.0),
+            new_meal.get('kcal', 0),
+            new_meal.get('protein', 0),
+            new_meal.get('carbohydrate', 0),
+            new_meal.get('fat', 0),
+            new_meal.get('ingredients', ''),
+            new_meal.get('instructions', ''),
+            new_meal.get('summary', ''),
+            json.dumps(new_meal.get('nutritionDetails', {})),
+            new_meal.get('imageUrl', None),
+            meal_id
+        ))
+
+        # 2. Get planId from this meal
+        self.diet_model.cur.execute("SELECT planId FROM Meal WHERE mealId = %s", (meal_id,))
+        row = self.diet_model.cur.fetchone()
+        if not row:
             return False
+        plan_id = row['planId']
+
+        # 3. Re-fetch all meals for this plan
+        self.diet_model.cur.execute("""
+            SELECT dayOfWeek, mealType, name, description, calories, protein, carbs, fat
+            FROM Meal
+            WHERE planId = %s
+            ORDER BY dayOfWeek, mealType
+        """, (plan_id,))
+        meals = self.diet_model.cur.fetchall()
+
+        # 4. Reconstruct weekly plan
+        days_of_week = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday']
+        weekly_plan = []
+
+        for day_idx in range(7):
+            day_num = day_idx + 1
+            day_meals = [m for m in meals if m['dayOfWeek'] == day_num]
+
+            daily_plan = {
+                'day': day_num,
+                'day_name': days_of_week[day_idx],
+                'meals': day_meals,
+                'energy': {
+                    'target': 0,
+                    'actual': sum(m['calories'] for m in day_meals)
+                },
+                'nutrients': {
+                    'protein': sum(m['protein'] for m in day_meals),
+                    'carbohydrates': sum(m['carbs'] for m in day_meals),
+                    'fat': sum(m['fat'] for m in day_meals)
+                }
+            }
+            weekly_plan.append(daily_plan)
+
+        # 5. Update DietPlan.planData
+        self.diet_model.cur.execute("""
+            UPDATE DietPlan
+            SET planData = %s
+            WHERE planId = %s
+        """, (json.dumps(weekly_plan), plan_id))
+
+        return True
+
+    except Exception as e:
+        print(f"Error updating meal in DB: {e}")
+        return False
