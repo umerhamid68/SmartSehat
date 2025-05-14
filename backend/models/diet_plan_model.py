@@ -9,6 +9,8 @@ import torch.nn.functional as F
 from datetime import datetime, timedelta
 from flask import make_response, jsonify
 from configs.config import dbconfig
+import threading
+import mysql.connector
 
 # Add the path to import the Pakistani recipe integration module
 import sys
@@ -18,6 +20,8 @@ from diet_recommendation.pakistani_recipes_integration_via_agent import (
     VAE,
     MealOptimizer
 )
+
+_thread_local = threading.local()
 
 # Path to saved model components
 MODEL_DIR = os.path.join(os.path.dirname(__file__), '../models/diet_model')
@@ -39,24 +43,24 @@ TEST_STATIC_DATE = None    # e.g., date(2025, 5, 20)
 
 class diet_plan_model():
     def __init__(self):
-        print("DEBUG: Starting diet_plan_model initialization")
-        # Database connection
-        self.con = mysql.connector.connect(
+        # save cfg so _ensure_conn() can use it
+        self.dbcfg = dbconfig
+
+        # optional: make one throw‑away call to verify credentials
+        test = mysql.connector.connect(
             host=dbconfig['host'],
             user=dbconfig['username'],
             password=dbconfig['password'],
-            database=dbconfig['database']
+            database=dbconfig['database'],
+            ssl_disabled=True,
         )
-        self.con.autocommit = True
-        self.cur = self.con.cursor(dictionary=True)
-        print("DEBUG: Database connected")
-        
-        # Load model components
+        test.close()
+
+        # load model components that live on disk
         try:
             self.load_model_components()
-            print("DEBUG: Model components loaded successfully")
         except Exception as e:
-            print(f"Error loading model components: {str(e)}")
+            print(f"Model load error: {e}")
     def _parse_list_field(self, value):
         """
         Robustly turn a DB field that *might* contain:
@@ -90,24 +94,35 @@ class diet_plan_model():
     
     def _ensure_conn(self):
         """
-        One call per request: make sure the connection is alive
-        and *bound to the current thread*.
+        Return a live mysql.connector connection & dict cursor
+        that belong to *this* thread. Re‑opens automatically if lost.
         """
-        import pymysql
-        try:
-            self.conn.ping(reconnect=True)        # re‑opens if MySQL dropped it
-        except Exception:
-            # stale or cross‑thread → open a brand‑new connection
-            self.conn = pymysql.connect(
+        if getattr(_thread_local, "conn", None) is None:
+            _thread_local.conn = mysql.connector.connect(
                 host=dbconfig['host'],
                 user=dbconfig['username'],
                 password=dbconfig['password'],
                 database=dbconfig['database'],
                 autocommit=True,
-                cursorclass=pymysql.cursors.DictCursor,
-                ssl={"ssl_disabled": True},       # ← turn off TLS locally
+                # ↓ turn off SSL if you're on localhost
+                ssl_disabled=True,
             )
-        self.cur = self.conn.cursor()
+
+        try:
+            _thread_local.conn.ping(reconnect=True, attempts=1, delay=0)
+        except Exception:
+            _thread_local.conn.close()
+            _thread_local.conn = mysql.connector.connect(
+                host=dbconfig['host'],
+                user=dbconfig['username'],
+                password=dbconfig['password'],
+                database=dbconfig['database'],
+                autocommit=True,
+                ssl_disabled=True,
+            )
+
+        _thread_local.cur = _thread_local.conn.cursor(dictionary=True)
+        return _thread_local.conn, _thread_local.cur
 
     def load_model_components(self):
         """Load saved model components"""
@@ -145,13 +160,13 @@ class diet_plan_model():
         """Load nutrition data from database or CSV"""
 
         try:
-            self._ensure_conn()
+            conn, cur = self._ensure_conn()
             import pandas as pd
             return pd.read_csv(os.path.join(MODEL_DIR, 'meal_nutrition_complete.csv'))
         except:
             # Fallback to database if file not found
-            self.cur.execute("SELECT * FROM meal_nutrition")
-            result = self.cur.fetchall()
+            cur.execute("SELECT * FROM meal_nutrition")
+            result = cur.fetchall()
             import pandas as pd
             return pd.DataFrame(result)
     
@@ -217,7 +232,7 @@ class diet_plan_model():
     def save_user_metrics(self, user_id, history_id, metrics):
         """Save calculated user metrics to database"""
         try:
-            self._ensure_conn()
+            conn, cur = self._ensure_conn()
             query = """
             INSERT INTO UserMetrics 
             (userId, historyId, bmr, bmi, targetEnergyIntake, pal, calculatedOn)
@@ -241,7 +256,7 @@ class diet_plan_model():
                 current_time
             )
             
-            self.cur.execute(query, values)
+            cur.execute(query, values)
             return True
         except Exception as e:
             print(f"Error saving user metrics: {str(e)}")
@@ -250,7 +265,7 @@ class diet_plan_model():
     def get_user_profile_for_diet(self, user_id):
         """Get complete user profile in the format expected by the diet algorithm"""
         try:
-            self._ensure_conn()
+            conn, cur = self._ensure_conn()
             # Query to get latest medical history
             query = """
             SELECT 
@@ -265,8 +280,8 @@ class diet_plan_model():
             LIMIT 1
             """
             
-            self.cur.execute(query, (user_id,))
-            user_data = self.cur.fetchone()
+            cur.execute(query, (user_id,))
+            user_data = cur.fetchone()
             
             if not user_data:
                 return None
@@ -347,7 +362,7 @@ class diet_plan_model():
     def save_diet_plan(self, user_id, target_calories, weekly_plan):
         """Save the generated diet plan to database"""
         try:
-            self._ensure_conn()
+            conn, cur = self._ensure_conn()
             # Calculate week dates
             today = datetime.now().date()
             week_start = today
@@ -383,12 +398,12 @@ class diet_plan_model():
                 target_calories,
                 json.dumps(serializable_plan)
             )
-            self.cur.execute(plan_query, plan_values)
-            plan_id = self.cur.lastrowid
+            cur.execute(plan_query, plan_values)
+            plan_id = cur.lastrowid
             
             # Check which columns exist in the Meal table
-            self.cur.execute("SHOW COLUMNS FROM Meal")
-            columns = [col['Field'] for col in self.cur.fetchall()]
+            cur.execute("SHOW COLUMNS FROM Meal")
+            columns = [col['Field'] for col in cur.fetchall()]
             has_ingredients = 'ingredients' in columns
             has_instructions = 'instructions' in columns
             has_summary = 'summary' in columns
@@ -471,8 +486,8 @@ class diet_plan_model():
 
                         )
                     
-                    self.cur.execute(meal_query, meal_values)
-                    meal['meal_id'] = self.cur.lastrowid
+                    cur.execute(meal_query, meal_values)
+                    meal['meal_id'] = cur.lastrowid
             
             return True
         except Exception as e:
@@ -559,7 +574,7 @@ class diet_plan_model():
     def get_diet_plans(self, user_id):
         """Get existing diet plans for a user"""
         try:
-            self._ensure_conn()
+            conn, cur = self._ensure_conn()
             # Check for existing plan in database
             query = """
             SELECT planId, generatedDate, weekStartDate, weekEndDate, targetCalories
@@ -568,8 +583,8 @@ class diet_plan_model():
             ORDER BY generatedDate DESC
             LIMIT 1
             """
-            self.cur.execute(query, (user_id,))
-            plan_data = self.cur.fetchone()
+            cur.execute(query, (user_id,))
+            plan_data = cur.fetchone()
             
             if not plan_data:
                 # No plan exists, generate a new one
@@ -585,8 +600,8 @@ class diet_plan_model():
             plan_id = plan_data['planId']
             
             # Check which columns exist in the Meal table
-            self.cur.execute("SHOW COLUMNS FROM Meal")
-            columns = [col['Field'] for col in self.cur.fetchall()]
+            cur.execute("SHOW COLUMNS FROM Meal")
+            columns = [col['Field'] for col in cur.fetchall()]
             
             # Build the query dynamically based on available columns
             base_columns = ['mealId', 'dayOfWeek', 'mealType', 'name', 'description', 'calories', 'protein', 'carbs', 'fat', 'isCompleted']
@@ -624,8 +639,8 @@ class diet_plan_model():
             WHERE planId = %s AND dayOfWeek = %s  -- First day of the week
             ORDER BY mealType
             """
-            self.cur.execute(query, (plan_id, day_of_week))
-            meals = self.cur.fetchall()
+            cur.execute(query, (plan_id, day_of_week))
+            meals = cur.fetchall()
             
             # Format for frontend
             frontend_plan = {
@@ -702,7 +717,7 @@ class diet_plan_model():
     def get_weekly_diet_plan(self, user_id):
         """Get full weekly diet plan for a user"""
         try:
-            self._ensure_conn()
+            conn, cur = self._ensure_conn()
             # Check for existing plan in database
             query = """
             SELECT planId, generatedDate, weekStartDate, weekEndDate, targetCalories, planData
@@ -711,8 +726,8 @@ class diet_plan_model():
             ORDER BY generatedDate DESC
             LIMIT 1
             """
-            self.cur.execute(query, (user_id,))
-            plan_data = self.cur.fetchone()
+            cur.execute(query, (user_id,))
+            plan_data = cur.fetchone()
             
             if not plan_data:
                 # No plan exists, generate a new one
@@ -745,8 +760,8 @@ class diet_plan_model():
             WHERE planId = %s
             ORDER BY dayOfWeek, mealType
             """
-            self.cur.execute(query, (plan_id,))
-            all_meals = self.cur.fetchall()
+            cur.execute(query, (plan_id,))
+            all_meals = cur.fetchall()
             
             # Group by day
             days_of_week = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday']
@@ -791,7 +806,7 @@ class diet_plan_model():
     def get_meal_details(self, user_id, meal_id):
         """Get detailed information for a specific meal"""
         try:
-            self._ensure_conn()
+            conn, cur = self._ensure_conn()
             # Check if the meal belongs to the user and get all details
             query = """
             SELECT m.*, dp.userId
@@ -799,8 +814,8 @@ class diet_plan_model():
             JOIN DietPlan dp ON m.planId = dp.planId
             WHERE dp.userId = %s AND m.mealId = %s
             """
-            self.cur.execute(query, (user_id, meal_id))
-            meal_data = self.cur.fetchone()
+            cur.execute(query, (user_id, meal_id))
+            meal_data = cur.fetchone()
             
             if not meal_data:
                 return make_response({"message": "Meal not found or does not belong to user"}, 404)
@@ -880,9 +895,9 @@ class diet_plan_model():
     def mark_meal_completed(self, user_id, meal_id):
         """Set Meal.isCompleted 1 (idempotent)."""
         try:
-            self._ensure_conn()
+            conn, cur = self._ensure_conn()
             # make sure the meal belongs to the user
-            self.cur.execute(
+            cur.execute(
                 """
                 SELECT 1
                 FROM Meal m
@@ -891,13 +906,13 @@ class diet_plan_model():
                 """,
                 (user_id, meal_id),
             )
-            if not self.cur.fetchone():
+            if not cur.fetchone():
                 return make_response(
                     {"message": "Meal not found or does not belong to user"}, 404
                 )
 
             # update flag
-            self.cur.execute(
+            cur.execute(
                 """
                 UPDATE Meal m
                 JOIN DietPlan dp ON m.planId = dp.planId
@@ -916,7 +931,7 @@ class diet_plan_model():
     def get_all_diet_plan_meals(self, user_id):
         """Get all meals from the current diet plan grouped by day"""
         try:
-            self._ensure_conn()
+            conn, cur = self._ensure_conn()
             
             # Get the latest diet plan
             query = """
@@ -926,8 +941,8 @@ class diet_plan_model():
             ORDER BY generatedDate DESC
             LIMIT 1
             """
-            self.cur.execute(query, (user_id,))
-            plan_data = self.cur.fetchone()
+            cur.execute(query, (user_id,))
+            plan_data = cur.fetchone()
             
             if not plan_data:
                 return make_response({"message": "No diet plan found"}, 404)
@@ -944,8 +959,8 @@ class diet_plan_model():
                     FIELD(mealType, 'breakfast', 'morning_snack', 'lunch', 
                         'afternoon_snack', 'dinner', 'supper')
             """
-            self.cur.execute(query, (plan_id,))
-            all_meals = self.cur.fetchall()
+            cur.execute(query, (plan_id,))
+            all_meals = cur.fetchall()
             
             # Group meals by day
             days_data = {}

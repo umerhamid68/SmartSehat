@@ -1,7 +1,7 @@
 // Environment configuration
 const ENV = {
   dev: {
-    apiUrl: 'http://192.168.1.107:5000/api',
+    apiUrl: 'http://192.168.19.11:5000/api',
   },
   staging: {
     apiUrl: 'https://staging-api.smartsehat.com/api',
