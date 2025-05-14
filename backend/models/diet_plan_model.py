@@ -1003,3 +1003,108 @@ class diet_plan_model():
         except Exception as e:
             print(f"Error getting all diet plan meals: {str(e)}")
             return make_response({"message": f"Error retrieving meals: {str(e)}"}, 500)
+        
+    def update_meal_in_db(self, user_id, meal_id, new_meal):
+        """Update a meal in the database"""
+        try:
+            self._ensure_conn()
+            
+            # First verify the meal belongs to the user
+            self.cur.execute("""
+                SELECT m.planId
+                FROM Meal m
+                JOIN DietPlan dp ON m.planId = dp.planId
+                WHERE dp.userId = %s AND m.mealId = %s
+            """, (user_id, meal_id))
+            
+            result = self.cur.fetchone()
+            if not result:
+                return False
+                
+            plan_id = result['planId']
+            
+            # Update the meal
+            self.cur.execute("""
+                UPDATE Meal
+                SET name = %s,
+                    description = %s,
+                    portion = %s,
+                    calories = %s,
+                    protein = %s,
+                    carbs = %s,
+                    fat = %s
+                WHERE mealId = %s
+            """, (
+                new_meal.get('title', 'Updated Meal'),
+                f"Portion: {new_meal.get('portion', 1.0):.2f}",
+                new_meal.get('portion', 1.0),
+                float(new_meal.get('kcal', 0)),
+                float(new_meal.get('protein', 0)),
+                float(new_meal.get('carbohydrate', 0)),
+                float(new_meal.get('fat', 0)),
+                meal_id
+            ))
+            
+            # Update planData with the new meal info
+            self.update_plan_data_for_meal(plan_id)
+            
+            return True
+            
+        except Exception as e:
+            print(f"Error updating meal in DB: {e}")
+            return False
+        
+def find_similar_meal(self, current_meal, user_profile):
+    """Find a similar meal from the meal_nutrition database"""
+    try:
+        self._ensure_conn()
+        
+        current_cal = float(current_meal['nutritional_values']['calories'])
+        min_cal = current_cal * 0.85
+        max_cal = current_cal * 1.15
+        meal_type = current_meal['description'].split()[2].lower()  # Extract meal type
+        
+        # Get the disease type for filtering
+        disease_type = user_profile.get('diseaseType', '')
+        
+        # Build query based on disease type
+        base_query = """
+            SELECT meal_id, title, meal_type, kcal, protein, carbohydrate, fat, portion
+            FROM meal_nutrition
+            WHERE meal_type = %s AND kcal BETWEEN %s AND %s
+            AND meal_id != %s
+        """
+        
+        params = [meal_type, min_cal, max_cal, current_meal.get('id', 0)]
+        
+        # Add disease-specific filters
+        if disease_type == 'diabetes':
+            base_query += " AND is_diabetic_friendly = 1"
+        elif disease_type == 'heart':
+            base_query += " AND is_heart_friendly = 1"
+        elif disease_type == 'liver':
+            base_query += " AND is_liver_friendly = 1"
+        
+        # Order randomly and limit results
+        base_query += " ORDER BY RAND() LIMIT 1"
+        
+        self.cur.execute(base_query, params)
+        replacement = self.cur.fetchone()
+        
+        if replacement:
+            # Return in the format expected by the update function
+            return {
+                'title': replacement['title'],
+                'meal_type': replacement['meal_type'],
+                'kcal': replacement['kcal'],
+                'protein': replacement['protein'],
+                'carbohydrate': replacement['carbohydrate'],
+                'fat': replacement['fat'],
+                'portion': replacement.get('portion', 1.0)
+            }
+        
+        return None
+        
+    except Exception as e:
+        print(f"Error finding similar meal: {e}")
+        return None     
