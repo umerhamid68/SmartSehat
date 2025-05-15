@@ -6,11 +6,13 @@ import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, date
 from flask import make_response, jsonify
 from configs.config import dbconfig
 import threading
 import mysql.connector
+
+_generation_lock = threading.Lock()
 
 # Add the path to import the Pakistani recipe integration module
 import sys
@@ -321,43 +323,107 @@ class diet_plan_model():
             print(f"Error getting user profile: {str(e)}")
             return None
     
+    # def generate_diet_plan(self, user_id):
+    #     """Generate a personalized Pakistani diet plan for the user"""
+    #     try:
+    #         # Get user profile in the correct format
+    #         user_profile = self.get_user_profile_for_diet(user_id)
+            
+    #         if not user_profile:
+    #             return make_response({"message": "User profile not found"}, 404)
+            
+    #         print(f"User profile for diet generation: {user_profile}")
+            
+    #         # Generate Pakistani meal plan using the imported function
+    #         pakistani_meal_plan = generate_smart_sehat_meal_plan(
+    #             user_profile, 
+    #             self.model, 
+    #             self.meal_nutrition_df, 
+    #             self.meal_optimizer, 
+    #             self.norm_params
+    #         )
+            
+    #         if not pakistani_meal_plan:
+    #             return make_response({"message": "Failed to generate meal plan"}, 500)
+            
+    #         # Save the plan to database
+    #         self.save_diet_plan(user_id, user_profile['target_energy_intake'], pakistani_meal_plan)
+            
+    #         # Format for frontend
+    #         frontend_plan = self.format_plan_for_frontend(pakistani_meal_plan)
+            
+    #         return make_response({
+    #             "message": "Diet plan generated successfully",
+    #             "plan": frontend_plan
+    #         }, 200)
+            
+    #     except Exception as e:
+    #         print(f"Error generating diet plan: {str(e)}")
+    #         return make_response({"message": f"Error generating diet plan: {str(e)}"}, 500)
+
     def generate_diet_plan(self, user_id):
-        """Generate a personalized Pakistani diet plan for the user"""
+        """Generate a personalised diet plan, but only once per week."""
         try:
-            # Get user profile in the correct format
-            user_profile = self.get_user_profile_for_diet(user_id)
-            
-            if not user_profile:
-                return make_response({"message": "User profile not found"}, 404)
-            
-            print(f"User profile for diet generation: {user_profile}")
-            
-            # Generate Pakistani meal plan using the imported function
-            pakistani_meal_plan = generate_smart_sehat_meal_plan(
-                user_profile, 
-                self.model, 
-                self.meal_nutrition_df, 
-                self.meal_optimizer, 
-                self.norm_params
-            )
-            
-            if not pakistani_meal_plan:
-                return make_response({"message": "Failed to generate meal plan"}, 500)
-            
-            # Save the plan to database
-            self.save_diet_plan(user_id, user_profile['target_energy_intake'], pakistani_meal_plan)
-            
-            # Format for frontend
-            frontend_plan = self.format_plan_for_frontend(pakistani_meal_plan)
-            
-            return make_response({
-                "message": "Diet plan generated successfully",
-                "plan": frontend_plan
-            }, 200)
-            
+            # ---------- single-thread / single-week guard ----------
+            with _generation_lock:          # ① serialise concurrent calls
+                conn, cur = self._ensure_conn()
+
+                week_start = datetime.now().date()
+                cur.execute(
+                    """
+                    SELECT planData, targetCalories
+                    FROM DietPlan
+                    WHERE userId = %s AND weekStartDate = %s
+                    LIMIT 1
+                    """,
+                    (user_id, week_start),
+                )
+                row = cur.fetchone()
+                if row:                     # ② plan already exists → reuse it
+                    stored_plan = json.loads(row["planData"])
+                    frontend_plan = self.format_plan_for_frontend(stored_plan)
+                    return make_response(
+                        {"message": "Diet plan already exists",
+                         "plan": frontend_plan},
+                        200,
+                    )
+
+                # ---------- no plan yet → build a new one ----------
+                user_profile = self.get_user_profile_for_diet(user_id)
+                if not user_profile:
+                    return make_response({"message": "User profile not found"}, 404)
+
+                print(f"User profile for diet generation: {user_profile}")
+
+                pakistani_meal_plan = generate_smart_sehat_meal_plan(
+                    user_profile,
+                    self.model,
+                    self.meal_nutrition_df,
+                    self.meal_optimizer,
+                    self.norm_params,
+                )
+                if not pakistani_meal_plan:
+                    return make_response({"message": "Failed to generate meal plan"}, 500)
+
+                # persist + format
+                self.save_diet_plan(
+                    user_id,
+                    user_profile["target_energy_intake"],
+                    pakistani_meal_plan,
+                )
+                frontend_plan = self.format_plan_for_frontend(pakistani_meal_plan)
+
+                return make_response(
+                    {"message": "Diet plan generated successfully",
+                     "plan": frontend_plan},
+                    200,
+                )
+
         except Exception as e:
             print(f"Error generating diet plan: {str(e)}")
-            return make_response({"message": f"Error generating diet plan: {str(e)}"}, 500)
+            return make_response(
+                {"message": f"Error generating diet plan: {str(e)}"}, 500
+            )
     
     def save_diet_plan(self, user_id, target_calories, weekly_plan):
         """Save the generated diet plan to database"""

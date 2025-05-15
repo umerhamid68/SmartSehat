@@ -15,10 +15,27 @@ import numpy as np
 from sklearn.metrics.pairwise import cosine_similarity
 import re
 from together import Together
+import time
+
+from google import genai
+from google.genai import types
+
+# Set up your API key (you'll need to get this from Google AI Studio)
+GOOGLE_API_KEY = "AIzaSyDeZoVAprV4gHEvFIy290OZBD1dY5wkPxs"
 
 # Set up Together AI client
 TOGETHER_API_KEY = os.environ.get("TOGETHER_API_KEY", "63269cd907596d9c031586061650084b73002400f24d0e1898d65edca00cc443")
 together_client = Together(api_key=TOGETHER_API_KEY)
+
+genai_client = genai.Client(api_key=GOOGLE_API_KEY)
+
+# Model ID for Gemini 2.5 Flash with thinking capabilities
+MODEL_ID = "gemini-2.5-flash-preview-04-17"
+
+# from google import genai
+
+# client = genai.Client(api_key="AIzaSyDeZoVAprV4gHEvFIy290OZBD1dY5wkPxs")
+
 
 # Device configuration
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -167,27 +184,68 @@ Recipe {i+1}: {recipe['name']}
     elif health_condition == 'cvd':
         prompt += "\nFor Cardiovascular Disease patients, please prioritize low-fat, low-sodium options and heart-healthy ingredients."
 
-    prompt += f"\n\nSelect the SINGLE most appropriate recipe number for this {meal_type}. Consider both nutritional match and dietary restrictions. Return ONLY the recipe number (1, 2, 3, etc.) and a brief reason."
+    prompt += f"\n\nSelect the SINGLE most appropriate recipe number for this {meal_type}. Consider both nutritional match and dietary restrictions. Return ONLY the recipe number (1, 2, 3, etc.)  NOTE: Your response should be ONLY the recipe number. Example: Recipe : 1, Example 2: Recipe: 3. DONT RETURN ANYTHING ELSE."
 
     try:
         response = together_client.chat.completions.create(
-            model="deepseek-ai/DeepSeek-R1",
+            model="deepseek-ai/DeepSeek-V3",
             messages=[{"role": "user", "content": prompt}],
             max_tokens=200,
             temperature=0.1
         )
+        # time.sleep(6)
+        # response = genai_client.models.generate_content(
+        #     model=MODEL_ID,
+        #     contents=prompt,
+        #     config=types.GenerateContentConfig(
+        #         temperature=0.1,
+        #         max_output_tokens=200,
+        #         thinking_config=types.ThinkingConfig(
+        #             thinking_budget=8192  # Allow the model to think through the problem
+        #         )
+        #     )
+        # )
 
         response_text = response.choices[0].message.content
+        #response_text = response.text
 
-        number_match = re.search(r'^(\d+)', response_text.strip())
-        if number_match:
-            selected_num = int(number_match.group(1))
-        else:
-            number_match = re.search(r'Recipe (\d+)', response_text)
-            if number_match:
-                selected_num = int(number_match.group(1))
-            else:
-                selected_num = 1
+        print(f"Gemini response: {response_text}")
+
+        # Try multiple patterns to extract the recipe number
+        patterns = [
+            r'^(\d+)',                    # Number at the start
+            r'Recipe (\d+)',              # "Recipe N"
+            r'recipe (\d+)',              # "recipe n" lowercase
+            r'number (\d+)',              # "number N"
+            r'choose recipe (\d+)',       # "choose recipe N"
+            r'select recipe (\d+)',       # "select recipe N"
+            r'\b(\d+)\b',                 # Any standalone number
+        ]
+
+        # number_match = re.search(r'^(\d+)', response_text.strip())
+        # if number_match:
+        #     print(f"1. Selected recipe number: {number_match.group(1)}")
+        #     selected_num = int(number_match.group(1))
+        # else:
+        #     number_match = re.search(r'Recipe (\d+)', response_text)
+            
+        #     print(f"2. Selected recipe number: {number_match.group(1)}")
+        #     if number_match:
+        #         selected_num = int(number_match.group(1))
+        #     else:
+        #         print("No recipe number found in the response. Defaulting to recipe 1.")
+        #         selected_num = 1
+        selected_num = None
+        for pattern in patterns:
+            match = re.search(pattern, response_text.strip())
+            if match:
+                selected_num = int(match.group(1))
+                break
+        
+        # If no number found, default to first recipe
+        if selected_num is None:
+            print(f"Warning: Could not extract recipe number from response: {response_text}")
+            selected_num = 1
 
         selected_idx = selected_num - 1
         if selected_idx < 0 or selected_idx >= len(candidate_recipes):

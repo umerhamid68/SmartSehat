@@ -277,7 +277,7 @@ const styles = StyleSheet.create({
         backgroundColor: '#f8f8f8',
     },
     scrollContent: {
-        paddingBottom: 50, // Add extra space for the bottom navigation
+        paddingBottom: 70, // Add extra space for the bottom navigation
       },
   header: {
     padding: 20,

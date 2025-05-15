@@ -95,79 +95,6 @@ export default function FoodScanner() {
     setScanChoiceModalVisible(true);
   };
 
-  // Common function to handle image picking and sending to the server
-//   const handleImagePick = async (type, mode) => {
-//     try {
-//       setScanChoiceModalVisible(false);
-//       setScanType(type);
-
-//       const { status } = await ImagePicker.requestCameraPermissionsAsync();
-//       if (status !== 'granted') {
-//         Alert.alert('Camera access denied', 'Please grant camera access to take pictures.');
-//         return;
-//       }
-
-//       const result = await ImagePicker.launchCameraAsync({
-//         mediaTypes: ImagePicker.MediaTypeOptions.Images,
-//         allowsEditing: true,
-//         quality: 1,
-//         base64: true,
-//       });
-
-//       if (result.canceled || !result.assets || result.assets.length === 0) {
-//         console.log('User cancelled camera or no asset returned.');
-//         return;
-//       }
-
-//       const pickedUri = result.assets[0].uri;
-//       const permanentUri = await copyImageToPermanentLocation(pickedUri);
-//       setUri(permanentUri);
-//       await sendImageToServer(permanentUri, type, mode);
-//     } catch (err) {
-//       console.log('Error in handleImagePick:', err);
-//     }
-//   };
-
-
-
-
-// //temporary for testing
-// const handleImagePick = async (type, mode) => {
-//     try {
-//       setScanChoiceModalVisible(false);
-//       setScanType(type);
-  
-//       // Request permission for both camera and media library
-//       const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
-//       if (status !== 'granted') {
-//         Alert.alert('Media library access denied', 'Please grant access to pick images from the gallery.');
-//         return;
-//       }
-  
-//       // Let the user pick an image from the gallery
-//       const result = await ImagePicker.launchImageLibraryAsync({
-//         mediaTypes: ImagePicker.MediaTypeOptions.Images,
-//         allowsEditing: true, // Enables cropping
-//         quality: 1,
-//         base64: true,
-//       });
-  
-//       if (result.canceled || !result.assets || result.assets.length === 0) {
-//         console.log('User cancelled image picker or no asset returned.');
-//         return;
-//       }
-  
-//       const pickedUri = result.assets[0].uri;
-//       const permanentUri = await copyImageToPermanentLocation(pickedUri);
-//       setUri(permanentUri);
-  
-//       // Send the image to the server
-//       await sendImageToServer(permanentUri, type, mode);
-//     } catch (err) {
-//       console.log('Error in handleImagePick:', err);
-//     }
-//   };
-
 
 
 
@@ -246,215 +173,6 @@ const handleImagePick = async (type, mode) => {
 };
 
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-  // Send image to server
-//   const sendImageToServer = async (uri, scanType, mode) => {
-//     setIsLoading(true);
-//     await new Promise((resolve) => setTimeout(resolve, 1000)); // Simulate loading
-
-//     try {
-//       console.log(`Sending ${scanType} (${mode}) image to server:`, uri);
-
-//       let data;
-//       if (scanType === 'meal') {
-//         data = { meal: { name: 'Chicken Biryani' } };
-//       } else if (mode === 'initial') {
-//         data = {
-//           ingredients: ['Non dairy creamer', 'Glucose syrup', 'Hydrogenated vegetable oil'],
-//         };
-//       } else if (mode === 'nutritionOnly') {
-//         data = {
-//           nutrition: {
-//             ServingSize: '100 gm',
-//             Calories: '368 kcal',
-//             Protein: '11 g',
-//             Fat: '1 g',
-//             Carbohydrates: '78.9 g',
-//             DietaryFiber: '2.7 g',
-//             Sugars: '1.1 g',
-//           },
-//         };
-//       }
-
-//       if (gptResult.error) {
-//         setIsLoading(false);
-//         Alert.alert('Error', gptResult.error, [{ text: 'Retake Image', onPress: resetScanner }]);
-//         return;
-//       }
-
-//       // Populate form fields based on server response
-//       if (gptResult.meal) {
-//         setMealName(gptResult.meal.name || '');
-//       }
-//       if (gptResult.ingredients) {
-//         setIngredientsText(gptResult.ingredients.join('\n'));
-//       }
-//       if (gptResult.nutrition) {
-//         const { Calories, Energy, ...rest } = gptResult.nutrition;
-//         setNutritionText(Object.entries(rest).map(([key, val]) => `${key}: ${val}`).join('\n'));
-//         setCaloriesOrEnergy(Calories || Energy || '');
-//       }
-
-//       setServerResponse(data);
-//       setFormModalVisible(true);
-//     } catch (error) {
-//       Alert.alert('Error', error.message || 'Something went wrong.');
-//       console.log('Error in sendImageToServer:', error);
-//     } finally {
-//       setIsLoading(false);
-//     }
-//  };
-
-    // const sendImageToServer = async (uri, type, mode) => {
-    //     try {
-    //     setIsLoading(true);
-
-    //     const token = await AsyncStorage.getItem('jwt_token');
-    //     if (!token) {
-    //         throw new Error('No authentication token found');
-    //     }
-    
-    //     // Create form data
-    //     const formData = new FormData();
-        
-    //     // Add the image file
-    //     formData.append('image', {
-    //         uri: uri,
-    //         type: 'image/jpeg',
-    //         name: 'image.jpg'
-    //     });
-    
-    //     // Determine endpoint based on scan type and mode
-    //     let endpoint = '';
-    //     if (type === 'meal') {
-    //         endpoint = `${API_BASE_URL}/scan/meal`;
-    //     } else if (mode === 'initial') {
-    //         endpoint = `${API_BASE_URL}/scan/product`;
-    //     } else if (mode === 'nutritionOnly') {
-    //         endpoint = `${API_BASE_URL}/scan/nutrition`;
-    //     }
-    
-    //     const response = await fetch(endpoint, {
-    //       method: 'POST',
-    //       body: formData,
-    //       headers: {
-    //           'Content-Type': 'multipart/form-data',
-    //           'Authorization': `Bearer ${token}`,  // Add JWT token to headers
-    //       },
-    //     });
-    //     console.log('response', response);
-
-    //     if (response.status === 401) {
-    //       // Handle invalid or expired token
-    //       throw new Error('INVALID_TOKEN');
-
-    //     }
-    
-    //     const data = await response.json();
-
-    //     if (!response.ok) {
-    //       throw new Error(data.error || 'Failed to analyze image');
-    //     }
-        
-
-
-    //     // Check for the specific error case of invalid food image
-    //     if (data.gptResult.error === "No relevant data found in the image.") {
-    //       // Show alert but don't throw error - we'll still show the form
-    //       //console.log('here:', data.error);
-    //       Alert.alert(
-    //           'Invalid Image',
-    //           'The provided image could not identify any relevant information. Please input data manually or retake the image.',
-    //           [
-    //               {
-    //                   text: 'OK',
-    //                   onPress: () => {
-    //                       setFormModalVisible(true); // Show the form anyway
-    //                   }
-    //               }
-    //           ]
-    //       );
-    //       // Set empty values but still show the form
-    //       if (type === 'meal') {
-    //           setMealName('');
-    //       } else {
-    //           if (mode === 'initial') {
-    //               setIngredientsText('');
-    //           }
-    //           if (mode === 'nutritionOnly') {
-    //               setNutritionText('');
-    //               setCaloriesOrEnergy('');
-    //           }
-    //       }
-    //       setServerResponse(null);
-    //       setFormModalVisible(true);
-    //       return; // Exit early but don't throw error
-    //   }
-        
-        
-
-    //     const { scanId: returnedScanId, gptResult } = data;
-
-    //     setScanId(returnedScanId || null);
-    
-    //     // Update form fields based on response
-    //     if (type === 'meal') {
-    //         setMealName(gptResult.meal.name || '');
-    //     } else {
-    //         if (mode === 'initial') {
-    //         //setProductName(gptResult.productName || '');
-    //         setIngredientsText(gptResult.ingredients?.join('\n') || '');
-    //         }
-    //         if (mode === 'nutritionOnly') {
-    //         const nutritionText = Object.entries(gptResult.nutrition || {})
-    //             .map(([key, value]) => `${key}: ${value}`)
-    //             .join('\n');
-    //         setNutritionText(nutritionText);
-    //         setCaloriesOrEnergy(gptResult.nutrition?.calories || gptResult.nutrition?.energy || '');
-    //         }
-    //     }
-    
-    //     setServerResponse(gptResult);
-    //     setFormModalVisible(true);
-    //     } catch (error) {
-    //       if (error.message === 'INVALID_TOKEN') {
-    //         // Handle missing token - redirect to login or show appropriate message
-    //         Alert.alert('Authentication Error', 'Please log in or signup to continue');
-    //         // You might want to add navigation logic here
-    //         router.replace('/userLogin');
-    //     } else if (error.message === 'No authentication token found') {
-    //       Alert.alert('Authentication Error', 'Please log in or signup to continue');
-    //       // You might want to add navigation logic here
-    //       router.replace('/userLogin');
-          
-    //     }
-        
-    //     else {
-    //         Alert.alert('Error', error.message);
-    //         console.error('Error sending image to server:', error);
-    //     }
-        
-    //     } finally {
-    //     setIsLoading(false);
-    //     }
-    // };
     const sendImageToServer = async (uri, type, mode) => {
       try {
         setIsLoading(true);
@@ -558,6 +276,11 @@ const handleImagePick = async (type, mode) => {
                 .map(([key, value]) => `${key}: ${value}`)
                 .join('\n');
               setNutritionText(nutritionText);
+              const energy = gptResult.nutrition?.["Total Energy"] || gptResult.nutrition?.["Total Calories"]
+              || gptResult.nutrition?.["Energy"] || gptResult.nutrition?.["Calories"] ||
+              gptResult.nutrition?.calories || 
+              gptResult.nutrition?.energy || 
+              '';
               setCaloriesOrEnergy(gptResult.nutrition?.calories || gptResult.nutrition?.energy || '');
             }
           }
@@ -577,65 +300,6 @@ const handleImagePick = async (type, mode) => {
         setIsLoading(false);
       }
     };
-
-  // const scanNutritionLabel = async () => {
-  //   try {
-  //     //setIsLoading(true); // Show loading overlay
-  
-  //     // 1) Request camera permission
-  //   //   const { status } = await ImagePicker.requestCameraPermissionsAsync();
-  //   //   if (status !== 'granted') {
-  //   //     Alert.alert('Camera access denied', 'Please grant camera access to take pictures.');
-  //   //     setIsLoading(false); // Hide loading overlay if permission is denied
-  //   //     return;
-  //   //   }
-  
-  //   //   // 2) Launch camera
-  //   //   const result = await ImagePicker.launchCameraAsync({
-  //   //     mediaTypes: ImagePicker.MediaTypeOptions.Images,
-  //   //     allowsEditing: true,
-  //   //     quality: 1,
-  //   //   });
-  
-  //   //   if (result.canceled || !result.assets || result.assets.length === 0) {
-  //   //     console.log('User cancelled camera or no asset returned for nutrition label.');
-  //   //     setIsLoading(false); // Hide loading overlay if user cancels
-  //   //     return;
-  //   //   }
-  
-  //   const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
-  //   if (status !== 'granted') {
-  //     Alert.alert('Media library access denied', 'Please grant access to pick images from the gallery.');
-  //     return;
-  //   }
-
-  //   // Let the user pick an image from the gallery
-  //   const result = await ImagePicker.launchImageLibraryAsync({
-  //     mediaTypes: ImagePicker.MediaTypeOptions.Images,
-  //     allowsEditing: true, // Enables cropping
-  //     quality: 1,
-  //     base64: true,
-  //   });
-
-  //   if (result.canceled || !result.assets || result.assets.length === 0) {
-  //     console.log('User cancelled image picker or no asset returned.');
-  //     return;
-  //   }
-  //     // 3) Send to server for nutritional info
-  //     const pickedUri = result.assets[0].uri;
-  //     await sendImageToServer(pickedUri, 'product', 'nutritionOnly');
-  //   } catch (error) {
-  //     console.log('Error scanning nutrition label:', error);
-  //     //setIsLoading(false); // Hide loading overlay in case of error
-  //   }
-  //   // } finally {
-  //   //   setIsLoading(false); // Ensure loading overlay is hidden after process
-  //   // }
-  // };
-
-
-
-
 
 
 
@@ -729,146 +393,7 @@ const scanNutritionLabel = async () => {
     router.replace('/landing');
   };
 
-//   const predictMealSafety = async () => {
-//     try {
-//       setIsLoading(true);
-      
-//       // Navigate to safety page first (empty state)
-//       router.replace({
-//         pathname: '/foodSafety',
-//         params: {
-//           imageUri: uri || '',
-//           loading: true
-//         }
-//       });
 
-//     //   // Make API call to predict meal safety
-//     //   const response = await fetch(`${SAFETY_PREDICTION_ENDPOINT}/meal`, {
-//     //     method: 'POST',
-//     //     headers: {
-//     //       'Content-Type': 'application/json',
-//     //     },
-//     //     body: JSON.stringify({
-//     //       mealName,
-//     //       imageUri: uri,
-//     //     }),
-//     //   });
-//       await new Promise((resolve) => setTimeout(resolve, 5000)); // Simulate loading
-
-//       //const data = await response.json();
-//       const data = { safetyScore: 9, safetyRating: 'Safe' };
-      
-//       // Update safety page with received data
-//       router.replace({
-//         pathname: '/foodSafety',
-//         params: {
-//           imageUri: uri || '',
-//           loading: false,
-//           calories: gptResult.nutrition?.calories || 'N/A',
-//           totalFat: gptResult.nutrition?.totalFat || 'N/A',
-//           servingSize: gptResult.nutrition?.servingSize || 'N/A',
-//           safetyScore: gptResult.safetyScore,
-//           safetyRating: gptResult.safetyRating,
-//           details: details || 'N/A', // Pass details
-//         }
-//       });
-
-//     } catch (error) {
-//       Alert.alert('Error', 'Failed to predict meal safety');
-//       router.back();
-//     }
-//   };
-
-
-  //  const predictMealSafety = async () => {
-  //   try {
-  //     setIsLoading(true);
-
-  //     const token = await AsyncStorage.getItem('jwt_token');
-  //       if (!token) {
-  //           throw new Error('No authentication token found');
-  //       }
-  
-  //     // Navigate to safety page first (empty state)
-  //     router.replace({
-  //       pathname: '/foodSafety',
-  //       params: {
-  //         imageUri: uri || '',
-  //         loading: true
-  //       }
-  //     });
-  
-  //     // Create form data
-  //     const formData = new FormData();
-  //   //   formData.append('image', {
-  //   //     uri: uri,
-  //   //     type: 'image/jpeg',
-  //   //     name: 'image.jpg'
-  //   //   });
-  //     formData.append('mealName', mealName);
-  //     formData.append("scanId", scanId.toString());
-  
-  //     // Make API call
-  //     const response = await fetch(`${API_BASE_URL}/predict/meal`, {
-  //       method: 'POST',
-  //       body: formData,
-  //       headers: {
-  //         'Content-Type': 'multipart/form-data',
-  //         'Authorization': `Bearer ${token}`,  // Add JWT token to headers
-  //       },
-  //     });
-
-  //     if (response.status === 401) {
-  //       // Handle invalid or expired token
-  //       throw new Error('INVALID_TOKEN');
-  //     }
-  
-  //     const data = await response.json();
-  //     //console.log(data);
-      
-  //     if (!response.ok) {
-  //       throw new Error(data.error || 'Failed to predict meal safety');
-  //     }
-  
-  //     // Update safety page with received data
-  //     console.log("data: ", data);
-  //     console.log("data.nutrition: ", data.nutrition);
-  //     router.replace({
-  //       pathname: '/foodSafety',
-  //       params: {
-  //         imageUri: uri || '',
-  //         loading: false,
-  //         calories: data.nutrition?.Calories || 'N/A',
-  //         totalFat: data.nutrition?.Fat || 'N/A',
-  //         servingSize: data.nutrition?.Serving || 'N/A',
-  //         safetyScore: data.safetyScore,
-  //         safetyRating: data.safetyRating
-  //       }
-  //     });
-  
-  //   } catch (error) {
-  //     if (error.message === 'INVALID_TOKEN') {
-  //       // Handle missing token - redirect to login or show appropriate message
-  //       Alert.alert('Authentication Error', 'Please log in or signup to continue');
-  //       // You might want to add navigation logic here
-  //       router.replace('/userLogin');
-  //   } else if (error.message === 'No authentication token found') {
-  //     Alert.alert('Authentication Error', 'Please log in or signup to continue');
-  //     // You might want to add navigation logic here
-  //     router.replace('/userLogin');
-      
-  //   }
-    
-  //     else {
-  //       Alert.alert('Error', error.message);
-  //       // console.error('Error sending image to server:', error);
-  //       router.back();
-  //     }
-      
-  //   } finally {
-  //     setIsLoading(false);
-  //   }
-  // };
   const predictMealSafety = async () => {
     try {
       setIsLoading(true);
@@ -956,78 +481,114 @@ const scanNutritionLabel = async () => {
     setFormModalVisible(true);
   };
 
-  // Predict safety for products
-//   const predictProductSafety = async () => {
-//     try {
-//       setIsLoading(true);
-
-//       // Navigate to safety page first (empty state)
-//       console.log("uri of image: ", uri);
-//       router.replace({
-//         pathname: '/foodSafety',
-//         params: {
-//           imageUri: uri || '',
-//           loading: true
-//         }
-//       });
-
-//       // Extract nutrition values from nutritionText
-//       const nutritionLines = nutritionText.split('\n');
-//       const nutritionData = {};
-//       nutritionLines.forEach(line => {
-//         const [key, value] = line.split(':').map(item => item.trim());
-//         nutritionData[key] = value;
-//       });
-
-//       // Make API call to predict product safety
-//     //   const response = await fetch(`${SAFETY_PREDICTION_ENDPOINT}/product`, {
-//     //     method: 'POST',
-//     //     headers: {
-//     //       'Content-Type': 'application/json',
-//     //     },
-//     //     body: JSON.stringify({
-//     //       productName,
-//     //       ingredients: ingredientsText.split('\n'),
-//     //       nutrition: nutritionData,
-//     //       calories: caloriesOrEnergy,
-//     //       imageUri: uri,
-//     //     }),
-//     //   });
-
-//       //const data = await response.json();
-//       await new Promise((resolve) => setTimeout(resolve, 5000)); // Simulate loading
-//       const data = { safetyScore: 9, safetyRating: 'Safe' };
-//       // Update safety page with received data
-//       router.replace({
-//         pathname: '/foodSafety',
-//         params: {
-//           imageUri: uri || '',
-//           loading: false,
-//           calories: caloriesOrEnergy || 'N/A',
-//           totalFat: nutritiongptResult.Fat || 'N/A', //add total fat here
-//           servingSize: nutritiongptResult.ServingSize || 'N/A',
-//           safetyScore: data?.safetyScore || 'N/A',
-//           safetyRating: data?.safetyRating || 'N/A',
-//           details: details || 'N/A', // Pass details
-//         }
-//       });
-
-//     } catch (error) {
-//       Alert.alert('Error', 'Failed to predict product safety');
-//       router.back();
-//     }
-//   };
 
 
 
+
+
+  // const predictProductSafety = async () => {
+  //   try {
+  //     setIsLoading(true);
+  //     const token = await AsyncStorage.getItem('jwt_token');
+  //       if (!token) {
+  //           throw new Error('No authentication token found');
+  //       }
+  
+  //     // Navigate to safety page first
+  //     router.replace({
+  //       pathname: '/foodSafety',
+  //       params: {
+  //         imageUri: uri || '',
+  //         loading: true
+  //       }
+  //     });
+  
+  //     // Extract nutrition values from nutritionText
+  //     const nutritionLines = nutritionText.split('\n');
+  //     const nutritionData = {};
+  //     nutritionLines.forEach(line => {
+  //       const [key, value] = line.split(':').map(item => item.trim());
+  //       nutritionData[key] = value;
+  //     });
+  //     console.log("nutritionData: ", nutritionData);
+  
+  //     // Prepare request data
+  //     const requestData = {
+  //       productName,
+  //       ingredients: ingredientsText.split('\n'),
+  //       nutrition: nutritionData,
+  //       calories: caloriesOrEnergy,
+  //       scanId: scanId.toString(),
+  //     };
+  
+  //     // Make API call
+  //     const response = await fetch(`${API_BASE_URL}/predict/product`, {
+  //       method: 'POST',
+  //       headers: {
+  //         'Content-Type': 'application/json',
+  //         'Authorization': `Bearer ${token}`  // Add JWT token to headers
+  //       },
+  //       body: JSON.stringify(requestData)
+  //     });
+
+  //     if (response.status === 401) {
+  //       // Handle invalid or expired token
+  //       throw new Error('INVALID_TOKEN');
+  //     }
+  
+  //     const data = await response.json();
+      
+  //     if (!response.ok) {
+  //       throw new Error(data.error || 'Failed to predict product safety');
+  //     }
+  
+  //     // Update safety page with received data
+  //     console.log("caloriesOrEnergy: ", caloriesOrEnergy);
+  //     console.log("data.nutrition.totalFat: ", nutritionData.totalFat);
+  //     console.log("data.nutrition.servingSize: ", nutritionData.servingSize);
+  //     router.replace({
+  //       pathname: '/foodSafety',
+  //       params: {
+  //         imageUri: uri || '',
+  //         loading: false,
+  //         calories: caloriesOrEnergy || 'N/A',
+  //         totalFat: nutritionData.totalFat || 'N/A',
+  //         servingSize: nutritionData.servingSize || 'N/A',
+  //         safetyScore: data.safetyScore,
+  //         safetyRating: data.safetyRating
+  //       }
+  //     });
+  
+  //   } catch (error) {
+  //     if (error.message === 'INVALID_TOKEN') {
+  //       // Handle missing token - redirect to login or show appropriate message
+  //       Alert.alert('Authentication Error', 'Please log in or signup to continue');
+  //       // You might want to add navigation logic here
+  //       router.replace('/userLogin');
+  //   } else if (error.message === 'No authentication token found') {
+  //     Alert.alert('Authentication Error', 'Please log in or signup to continue');
+  //     // You might want to add navigation logic here
+  //     router.replace('/userLogin');
+      
+  //   }
+    
+  //     else {
+  //       Alert.alert('Error', error.message);
+  //       // console.error('Error sending image to server:', error);
+  //       router.back();
+  //     }
+  //   } finally {
+  //     setIsLoading(false);
+  //   }
+  // };
 
   const predictProductSafety = async () => {
     try {
       setIsLoading(true);
       const token = await AsyncStorage.getItem('jwt_token');
-        if (!token) {
-            throw new Error('No authentication token found');
-        }
+      if (!token) {
+        throw new Error('No authentication token found');
+      }
   
       // Navigate to safety page first
       router.replace({
@@ -1045,6 +606,7 @@ const scanNutritionLabel = async () => {
         const [key, value] = line.split(':').map(item => item.trim());
         nutritionData[key] = value;
       });
+      console.log("nutritionData: ", nutritionData);
   
       // Prepare request data
       const requestData = {
@@ -1060,13 +622,12 @@ const scanNutritionLabel = async () => {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`  // Add JWT token to headers
+          'Authorization': `Bearer ${token}`
         },
         body: JSON.stringify(requestData)
       });
-
+  
       if (response.status === 401) {
-        // Handle invalid or expired token
         throw new Error('INVALID_TOKEN');
       }
   
@@ -1077,14 +638,22 @@ const scanNutritionLabel = async () => {
       }
   
       // Update safety page with received data
+      console.log("caloriesOrEnergy: ", caloriesOrEnergy);
+      console.log("data.nutrition.Total Fat: ", nutritionData["Total Fat"]);
+      console.log("data.nutrition.Serving Size: ", nutritionData["Serving Size"]);
+      
+      // Extract the correct values from nutritionData
+      const totalFat = nutritionData["Total Fat"] || nutritionData["Fat"]|| nutritionData.totalFat || 'N/A';
+      const servingSize = nutritionData["Serving Size"] || nutritionData["Serving"] || nutritionData.servingSize || 'N/A';
+      
       router.replace({
         pathname: '/foodSafety',
         params: {
           imageUri: uri || '',
           loading: false,
-          calories: caloriesOrEnergy || 'N/A',
-          totalFat: nutritionData.totalFat || 'N/A',
-          servingSize: nutritionData.servingSize || 'N/A',
+          calories: caloriesOrEnergy || nutritionData["Total Energy"] || nutritionData["Energy"] || nutritionData["Total Calories"] || nutritionData["Calories"]|| nutritionData.calories || 'N/A',
+          totalFat: totalFat,
+          servingSize: servingSize,
           safetyScore: data.safetyScore,
           safetyRating: data.safetyRating
         }
@@ -1092,20 +661,13 @@ const scanNutritionLabel = async () => {
   
     } catch (error) {
       if (error.message === 'INVALID_TOKEN') {
-        // Handle missing token - redirect to login or show appropriate message
         Alert.alert('Authentication Error', 'Please log in or signup to continue');
-        // You might want to add navigation logic here
         router.replace('/userLogin');
-    } else if (error.message === 'No authentication token found') {
-      Alert.alert('Authentication Error', 'Please log in or signup to continue');
-      // You might want to add navigation logic here
-      router.replace('/userLogin');
-      
-    }
-    
-      else {
+      } else if (error.message === 'No authentication token found') {
+        Alert.alert('Authentication Error', 'Please log in or signup to continue');
+        router.replace('/userLogin');
+      } else {
         Alert.alert('Error', error.message);
-        // console.error('Error sending image to server:', error);
         router.back();
       }
     } finally {

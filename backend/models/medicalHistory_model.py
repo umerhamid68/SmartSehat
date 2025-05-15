@@ -17,12 +17,98 @@ class medicalHistory_model():
             logger.error(f"Database connection error: {err}")
             raise
 
+    # def add_medical_history_model(self, data):
+    #     """Add medical history and disease-specific data as a transaction."""
+    #     print(data)
+    #     try:
+    #         # Start a transaction
+    #         self.con.start_transaction()
+    #         end_date = data['endDate'] if data['endDate'] and data['endDate'].strip() else None
+
+    #         # Step 1: Insert into MedicalHistory table
+    #         query = """
+    #         INSERT INTO MedicalHistory (userId, gender, diseaseType, startDate, endDate, height, weight, age, physicalActivity)
+    #         VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+    #         """
+    #         values = (
+    #             data['userId'], data['gender'], data['diseaseType'],
+    #             data['startDate'], end_date,
+    #             data['height'], data['weight'], data['age'], data['physicalActivity']
+    #         )
+    #         self.cur.execute(query, values)
+    #         historyid = self.cur.lastrowid  # Get the auto-generated historyid
+    #         #print("debug1")
+    #         # Step 2: Insert into disease-specific table
+    #         if data['diseaseType'] == 'heart':
+    #             query = """
+    #                 INSERT INTO HeartDisease (
+    #                     historyid, severity, stentInserted, openHeartSurgery, cholesterolLevel,
+    #                     hypertension, smoking, diabetesExpectancy
+    #                 ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+    #             """
+    #             values = (
+    #                 historyid, data['severity'], data['stentInserted'], data['openHeartSurgery'],
+    #                 data['cholesterolLevel'], data['hypertension'], data['smoking'], data['diabetesExpectancy']
+    #             )
+    #         elif data['diseaseType'] == 'liver':
+    #             query = """
+    #                 INSERT INTO FattyLiver (
+    #                     historyid, liverEnzymes, fibrosisStage, steatosisGrade, severity
+    #                 ) VALUES (%s, %s, %s, %s, %s)
+    #             """
+    #             values = (
+    #                 historyid, data['liverEnzymes'], data['fibrosisStage'],
+    #                 data['steatosisGrade'], data['severity']
+    #             )
+    #         elif data['diseaseType'] == 'diabetes':
+    #             query = """
+    #                 INSERT INTO Diabetes (
+    #                     historyid, type, bloodSugarLevel, a1cLevel, insulinUsage, insulinDependency
+    #                 ) VALUES (%s, %s, %s, %s, %s, %s)
+    #             """
+    #             values = (
+    #                 historyid, data['type'], data['bloodSugarLevel'], data['a1cLevel'],
+    #                 data['insulinUsage'], data['insulinDependency']
+    #             )
+
+    #         self.cur.execute(query, values)
+
+    #         # Commit the transaction
+    #         self.con.commit()
+    #         return make_response({"message": "MEDICAL_HISTORY_CREATED_SUCCESSFULLY"}, 201)
+    #     except mysql.connector.Error as err:
+    #         # Rollback the transaction in case of error
+    #         self.con.rollback()
+    #         logger.error(f"Error adding medical history: {err}")
+    #         return make_response({"message": "Database error"}, 500)
     def add_medical_history_model(self, data):
         """Add medical history and disease-specific data as a transaction."""
         print(data)
         try:
             # Start a transaction
             self.con.start_transaction()
+            
+            # Check if there's an existing diet plan for this user
+            self.cur.execute("""
+                SELECT planId 
+                FROM DietPlan 
+                WHERE userId = %s 
+                ORDER BY generatedDate DESC 
+                LIMIT 1
+            """, (data['userId'],))
+            
+            plan_record = self.cur.fetchone()
+            
+            if plan_record:
+                plan_id = plan_record['planId']
+                # Delete the existing diet plan (cascade will handle meals)
+                self.cur.execute("DELETE FROM DietPlan WHERE planId = %s", (plan_id,))
+                print(f"Deleted existing diet plan with ID: {plan_id}")
+            
+            # Also delete UserMetrics since they will need recalculation
+            self.cur.execute("DELETE FROM UserMetrics WHERE userId = %s", (data['userId'],))
+            
+            end_date = data['endDate'] if data['endDate'] and data['endDate'].strip() else None
 
             # Step 1: Insert into MedicalHistory table
             query = """
@@ -31,12 +117,12 @@ class medicalHistory_model():
             """
             values = (
                 data['userId'], data['gender'], data['diseaseType'],
-                data['startDate'], data['endDate'],
+                data['startDate'], end_date,
                 data['height'], data['weight'], data['age'], data['physicalActivity']
             )
             self.cur.execute(query, values)
             historyid = self.cur.lastrowid  # Get the auto-generated historyid
-            print("debug1")
+            
             # Step 2: Insert into disease-specific table
             if data['diseaseType'] == 'heart':
                 query = """
@@ -74,7 +160,12 @@ class medicalHistory_model():
 
             # Commit the transaction
             self.con.commit()
-            return make_response({"message": "MEDICAL_HISTORY_CREATED_SUCCESSFULLY"}, 201)
+            
+            response_data = {"message": "MEDICAL_HISTORY_CREATED_SUCCESSFULLY"}
+            if plan_record:
+                response_data["dietPlanDeleted"] = True
+            
+            return make_response(response_data, 201)
         except mysql.connector.Error as err:
             # Rollback the transaction in case of error
             self.con.rollback()
@@ -119,35 +210,55 @@ class medicalHistory_model():
             return make_response({"message": "Database error"}, 500)
 
     def update_medical_history_model(self, data):
-        print(data)
         """Update medical history and disease-specific data."""
         try:
             # Start a transaction
             self.con.start_transaction()
             self.cur.execute("SELECT historyid FROM MedicalHistory WHERE userId = %s", (data['userId'],))
             history_record = self.cur.fetchone()
-            print(history_record)
+            
             if not history_record:
+                self.con.rollback()
                 return make_response({"message": "MEDICAL_HISTORY_NOT_FOUND"}, 404)
             
             historyid = history_record['historyid']
-            # Step 1: Update MedicalHistory table
+            
+            # Get the most recent diet plan ID for this user
+            self.cur.execute("""
+                SELECT planId 
+                FROM DietPlan 
+                WHERE userId = %s 
+                ORDER BY generatedDate DESC 
+                LIMIT 1
+            """, (data['userId'],))
+            
+            plan_record = self.cur.fetchone()
+            plan_deleted = False
+            
+            if plan_record:
+                plan_id = plan_record['planId']
+                
+                # Delete the specific diet plan
+                self.cur.execute("DELETE FROM DietPlan WHERE planId = %s", (plan_id,))
+                plan_deleted = True
+            
+            end_date = data['endDate'] if data['endDate'] and data['endDate'].strip() else None
+            
+            # Update MedicalHistory table
             query = """
             UPDATE MedicalHistory
-            SET gender = %s, diseaseType = %s, medications = %s, startDate = %s, endDate = %s, diagnosedSince = %s,
+            SET gender = %s, diseaseType = %s, startDate = %s, endDate = %s,
                 height = %s, weight = %s, age = %s, physicalActivity = %s
             WHERE userId = %s
             """
             values = (
-                data['gender'], data['diseaseType'], data['medications'],
-                data['startDate'], data['endDate'], data['diagnosedSince'],
+                data['gender'], data['diseaseType'], data['startDate'], end_date,
                 data['height'], data['weight'], data['age'], data['physicalActivity'],
                 data['userId']
             )
-            print("debug1")
             self.cur.execute(query, values)
-            print("debug2")
-            # Step 2: Update disease-specific table
+            
+            # Update disease-specific table (rest of the code remains same)
             if data['diseaseType'] == 'heart':
                 query = """
                     UPDATE HeartDisease
@@ -183,9 +294,15 @@ class medicalHistory_model():
 
             self.cur.execute(query, values)
 
+            # Delete UserMetrics since BMR, BMI etc will need recalculation
+            self.cur.execute("DELETE FROM UserMetrics WHERE userId = %s", (data['userId'],))
+
             # Commit the transaction
             self.con.commit()
-            return make_response({"message": "MEDICAL_HISTORY_UPDATED_SUCCESSFULLY"}, 200)
+            return make_response({
+                "message": "MEDICAL_HISTORY_UPDATED_SUCCESSFULLY", 
+                "dietPlanDeleted": plan_deleted
+            }, 200)
         except mysql.connector.Error as err:
             # Rollback the transaction in case of error
             self.con.rollback()

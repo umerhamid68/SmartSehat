@@ -468,6 +468,9 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import DietPlanSection from '../components/DietPlanSection';
 import { useFocusEffect } from 'expo-router';
 import { BackHandler } from 'react-native';
+import { API_URL } from '../constants';
+
+const API_BASE_URL = API_URL;
 
 
 export default function Home() {
@@ -513,12 +516,31 @@ export default function Home() {
 
   const getUserInfo = async () => {
     try {
-      const userInfo = await AsyncStorage.getItem('user_info');
-      if (userInfo) {
-        const parsedInfo = JSON.parse(userInfo);
-        if (parsedInfo.name) {
-          setUserName(parsedInfo.name.split(' ')[0]);
+      // Get the JWT token first
+      const token = await AsyncStorage.getItem('jwt_token');
+      
+      if (!token) {
+        console.log('No auth token found');
+        return;
+      }
+  
+      // Fetch user details from your API
+      const response = await fetch(`${API_URL}/user/userDetails`, {
+        method: 'GET',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
         }
+      });
+  
+      if (response.ok) {
+        const data = await response.json();
+        if (data.payload) {
+          // Set the first name
+          setUserName(data.payload.firstName || 'User');
+        }
+      } else {
+        console.error('Failed to fetch user details');
       }
     } catch (error) {
       console.error('Error getting user info:', error);

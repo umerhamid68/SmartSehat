@@ -139,13 +139,26 @@ export default function UserProfile() {
         }
     };
 
+    const handleEditt = () => {
+        // Navigate to medical history page with existing data
+        if (medicalHistory.length > 0) {
+            router.push({
+                pathname: '/medicalHistory',
+                params: {
+                    isEdit: true,
+                    existingData: JSON.stringify(medicalHistory[0])
+                }
+            });
+        }
+    };
+
     const handleEdit = () => {
         Alert.alert(
             'Confirm Edit',
             'Are you sure you want to Edit this medical history?',
             [
                 { text: 'Cancel', style: 'cancel' },
-                { text: 'OK', onPress: deleteMedicalHistory },
+                { text: 'OK', onPress: handleEditt },
             ]
         );
     };

@@ -7,13 +7,16 @@ from datetime import datetime
 from together import Together
 from sentence_transformers import SentenceTransformer
 import os
+from openai import OpenAI
 
 from configs.config import dbconfig
 
 class scan_model():
     def __init__(self):
-        self.client = Together(api_key=os.environ.get("TOGETHER_API_KEY"))
-
+        self.client2 = Together(api_key=os.environ.get("TOGETHER_API_KEY"))
+        self.client = OpenAI(api_key="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")
+        # Your fine-tuned model ID
+        self.model_id = "ft:gpt-4o-2024-08-06:personal:scanner-module:Aj7oYhj9"
         self.con = mysql.connector.connect(
             host=dbconfig['host'],
             user=dbconfig['username'],
@@ -199,7 +202,7 @@ class scan_model():
             base64_image = self.encode_image_bytes(image_bytes)
             
             response = self.client.chat.completions.create(
-                model="meta-llama/Llama-3.2-90B-Vision-Instruct-Turbo",
+                model=self.model_id,  # Using your fine-tuned model
                 messages=[
                     {"role": "system", "content": self.system_prompt},
                     {
@@ -215,10 +218,6 @@ class scan_model():
                 ],
                 max_tokens=1024,
                 temperature=0.1,
-                top_p=0.7,
-                top_k=50,
-                repetition_penalty=0,
-                truncate=130560,
                 stream=False
             )
             
@@ -615,7 +614,7 @@ class scan_model():
 
             IMPORTANT: PLEASE DO NOT INCLUDE ANY OTHER INFORMATION IN THE RESPONSE. KEEP IT PURELY JSON.
             """
-            response = self.client.chat.completions.create(
+            response = self.client2.chat.completions.create(
                 model="meta-llama/Llama-3.3-70B-Instruct-Turbo",
                 messages=[
                     {"role": "system", "content": self.system_prompt_2},
@@ -710,7 +709,9 @@ class scan_model():
         }}
         IMPORTANT: PLEASE DO NOT INCLUDE ANY OTHER INFORMATION. KEEP IT PURELY JSON.
         """
-        response = self.client.chat.completions.create(
+
+        print("Prompt:", prompt)
+        response = self.client2.chat.completions.create(
             model="meta-llama/Llama-3.3-70B-Instruct-Turbo",
             messages=[
                 {"role": "system", "content": self.system_prompt_2},

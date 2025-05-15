@@ -54,12 +54,23 @@ const DietPlanSection = () => {
 
   const fetchDietPlans = async () => {
     try {
+      // Check if we currently have any plans
+      const hasCurrentPlans = dietPlans.morning.length > 0 || 
+                             dietPlans.evening.length > 0 || 
+                             dietPlans.night.length > 0;
+      
+      // Show generating modal if no current plans
+      if (!hasCurrentPlans) {
+        setGeneratingPlan(true);
+      }
+      
       setLoading(true);
       const token = await AsyncStorage.getItem('jwt_token');
       
       if (!token) {
         console.log('No auth token found');
         setLoading(false);
+        setGeneratingPlan(false);
         return;
       }
   
@@ -74,63 +85,25 @@ const DietPlanSection = () => {
       });
       
       if (!response.ok) {
-        if (response.status === 404) {
-          console.log('No diet plans found. Generating new plan...');
-          await generateNewDietPlan(token);
-          return;
-        } else {
-          throw new Error(`HTTP error! status: ${response.status}`);
-        }
+        throw new Error(`HTTP error! status: ${response.status}`);
       }
       
       const data = await response.json();
       
-      if (data.plans) {
+      if (data.plans || data.plan) {
         console.log('Diet plans loaded successfully');
-        setDietPlans(data.plans);
-      } else {
-        console.log('No diet plans data found');
+        setDietPlans(data.plans || data.plan);
       }
     } catch (error) {
       console.error('Error fetching diet plans:', error);
     } finally {
       setLoading(false);
       setRefreshing(false);
+      setGeneratingPlan(false);
     }
   };
 
-  const generateNewDietPlan = async (token) => {
-    try {
-      setGeneratingPlan(true); // Add this line
-      const response = await fetch(`${API_BASE_URL}/diet/generate`, {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${token}`,
-          'Content-Type': 'application/json'
-        }
-      });
-      
-      if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`);
-      }
-      
-      const data = await response.json();
-      
-      if (data.plan) {
-        console.log('New diet plan generated successfully');
-        setDietPlans(data.plan);
-      } else {
-        console.log('Failed to generate diet plan');
-      }
-    } catch (error) {
-      console.error('Error generating diet plan:', error);
-    } finally {
-      setGeneratingPlan(false); // Add this line
-      setLoading(false);
-      setRefreshing(false);
-    }
-  };
-
+  
   const markMealCompleted = async (mealId) => {
     try {
       const token = await AsyncStorage.getItem('jwt_token');
@@ -254,7 +227,7 @@ const DietPlanSection = () => {
     <View style={styles.container}>
       <View style={styles.header}>
         <Text style={styles.sectionTitle}>Today's Diet Plans</Text>
-        <TouchableOpacity onPress={() => router.push('/allDietPlans')}>
+        <TouchableOpacity onPress={() => router.push('/allMeals')}>
           <Text style={styles.viewAll}>View All</Text>
         </TouchableOpacity>
       </View>

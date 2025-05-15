@@ -5,13 +5,13 @@ import { useRouter, useSegments } from 'expo-router';
 
 export default function BottomNav() {
   const router = useRouter();
-  const segments = useSegments();  // Get current route segments
+  const segments = useSegments();
 
   // Define the active route based on the first segment
   const activeRoute = `/${segments[0]}`;
 
   // Function to get icon color based on the active route
-  const getIconColor = (route) => (activeRoute === route ? '#FF6B81' : '#666'); // Pink if active, gray otherwise
+  const getIconColor = (route) => (activeRoute === route ? '#FF6B81' : '#666');
 
   return (
     <View style={styles.bottomNav}>
@@ -20,19 +20,19 @@ export default function BottomNav() {
       </TouchableOpacity>
 
       <TouchableOpacity onPress={() => router.push('/allMeals')}>
-        <FontAwesome name="search" size={30} color={getIconColor('/search')} />
+        <FontAwesome name="cutlery" size={30} color={getIconColor('/allMeals')} />
       </TouchableOpacity>
 
       <TouchableOpacity onPress={() => router.push('/scanHistory')}>
-        <FontAwesome name="comments" size={30} color={getIconColor('/comments')} />
+        <FontAwesome name="camera" size={30} color={getIconColor('/scanHistory')} />
       </TouchableOpacity>
 
       <TouchableOpacity onPress={() => router.push('/chatBot')}>
-        <FontAwesome name="envelope" size={30} color={getIconColor('/chatBot')} />
+        <FontAwesome name="comment" size={30} color={getIconColor('/chatBot')} />
       </TouchableOpacity>
 
       <TouchableOpacity onPress={() => router.push('/userProfile')}>
-        <FontAwesome name="user" size={30} color={getIconColor('/profile')} />
+        <FontAwesome name="user" size={30} color={getIconColor('/userProfile')} />
       </TouchableOpacity>
     </View>
   );
