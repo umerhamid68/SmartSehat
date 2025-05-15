@@ -14,7 +14,7 @@ from configs.config import dbconfig
 class scan_model():
     def __init__(self):
         self.client2 = Together(api_key=os.environ.get("TOGETHER_API_KEY"))
-        self.client = OpenAI(api_key="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")
+        self.client = OpenAI(api_key=os.environ.get("OPENAI_API_KEY"))
         # Your fine-tuned model ID
         self.model_id = "ft:gpt-4o-2024-08-06:personal:scanner-module:Aj7oYhj9"
         self.con = mysql.connector.connect(
