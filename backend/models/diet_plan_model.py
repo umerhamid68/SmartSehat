@@ -1070,107 +1070,212 @@ class diet_plan_model():
             print(f"Error getting all diet plan meals: {str(e)}")
             return make_response({"message": f"Error retrieving meals: {str(e)}"}, 500)
         
-    def update_meal_in_db(self, user_id, meal_id, new_meal):
-        """Update a meal in the database"""
+    # def update_meal_in_db(self, user_id, meal_id, new_meal):
+    #     """Update a meal in the database"""
+    #     try:
+    #         self._ensure_conn()
+            
+    #         # First verify the meal belongs to the user
+    #         self.cur.execute("""
+    #             SELECT m.planId
+    #             FROM Meal m
+    #             JOIN DietPlan dp ON m.planId = dp.planId
+    #             WHERE dp.userId = %s AND m.mealId = %s
+    #         """, (user_id, meal_id))
+            
+    #         result = self.cur.fetchone()
+    #         if not result:
+    #             return False
+                
+    #         plan_id = result['planId']
+            
+    #         # Update the meal
+    #         self.cur.execute("""
+    #             UPDATE Meal
+    #             SET name = %s,
+    #                 description = %s,
+    #                 portion = %s,
+    #                 calories = %s,
+    #                 protein = %s,
+    #                 carbs = %s,
+    #                 fat = %s
+    #             WHERE mealId = %s
+    #         """, (
+    #             new_meal.get('title', 'Updated Meal'),
+    #             f"Portion: {new_meal.get('portion', 1.0):.2f}",
+    #             new_meal.get('portion', 1.0),
+    #             float(new_meal.get('kcal', 0)),
+    #             float(new_meal.get('protein', 0)),
+    #             float(new_meal.get('carbohydrate', 0)),
+    #             float(new_meal.get('fat', 0)),
+    #             meal_id
+    #         ))
+            
+    #         # Update planData with the new meal info
+    #         self.update_plan_data_for_meal(plan_id)
+            
+    #         return True
+            
+    #     except Exception as e:
+    #         print(f"Error updating meal in DB: {e}")
+    #         return False
+    # ───────────────────────────────────────────────────────────────
+# 1) Replace-or-add  update_meal_in_db
+# ───────────────────────────────────────────────────────────────
+    def update_meal_in_db(self, user_id: int, meal_id: int, new_meal: dict) -> bool:
+        """
+        Overwrite a Meal row with the fields in `new_meal`
+        and refresh DietPlan.planData.
+
+        new_meal keys expected ───────────────
+        title, meal_type, portion, kcal, protein, carbohydrate,
+        fat, ingredients (list|str), instructions (list|str),
+        summary, nutritionDetails (dict), imageUrl, isCompleted
+        """
         try:
             self._ensure_conn()
-            
-            # First verify the meal belongs to the user
+
+            # 1. verify ownership and grab planId
             self.cur.execute("""
                 SELECT m.planId
-                FROM Meal m
-                JOIN DietPlan dp ON m.planId = dp.planId
-                WHERE dp.userId = %s AND m.mealId = %s
+                FROM   Meal m
+                JOIN   DietPlan dp ON m.planId = dp.planId
+                WHERE  dp.userId = %s AND m.mealId = %s
             """, (user_id, meal_id))
-            
-            result = self.cur.fetchone()
-            if not result:
+            row = self.cur.fetchone()
+            if not row:
+                print("[update_meal_in_db] Meal not found / not owned")
                 return False
-                
-            plan_id = result['planId']
-            
-            # Update the meal
-            self.cur.execute("""
-                UPDATE Meal
-                SET name = %s,
-                    description = %s,
-                    portion = %s,
-                    calories = %s,
-                    protein = %s,
-                    carbs = %s,
-                    fat = %s
-                WHERE mealId = %s
-            """, (
-                new_meal.get('title', 'Updated Meal'),
-                f"Portion: {new_meal.get('portion', 1.0):.2f}",
-                new_meal.get('portion', 1.0),
-                float(new_meal.get('kcal', 0)),
-                float(new_meal.get('protein', 0)),
-                float(new_meal.get('carbohydrate', 0)),
-                float(new_meal.get('fat', 0)),
-                meal_id
-            ))
-            
-            # Update planData with the new meal info
+            plan_id = row["planId"]
+
+            # 2. discover available columns once
+            self.cur.execute("SHOW COLUMNS FROM Meal")
+            cols = {c["Field"] for c in self.cur.fetchall()}
+
+            setters, params = [], []
+
+            def add(col, val):
+                if col in cols:
+                    setters.append(f"{col}=%s")
+                    params.append(val)
+
+            add("name",          new_meal.get("title", "Updated Meal"))
+            add("mealType",      new_meal.get("meal_type"))
+            add("portion",       float(new_meal.get("portion", 1.0)))
+            add("calories",      float(new_meal.get("kcal", 0)))
+            add("protein",       float(new_meal.get("protein", 0)))
+            add("carbs",         float(new_meal.get("carbohydrate", 0)))
+            add("fat",           float(new_meal.get("fat", 0)))
+            add("isCompleted",   int(new_meal.get("isCompleted", 0)))
+
+            summary = new_meal.get("summary", "")
+            add("description",   summary or f"Portion: {new_meal.get('portion',1.0):.2f}")
+            add("summary",       summary)
+
+            # lists / dicts → JSON strings
+            if "ingredients" in cols:
+                ings = new_meal.get("ingredients", [])
+                add("ingredients",
+                    json.dumps(ings, ensure_ascii=False)
+                    if isinstance(ings, (list, dict)) else str(ings))
+
+            if "instructions" in cols:
+                instr = new_meal.get("instructions", [])
+                add("instructions",
+                    json.dumps(instr, ensure_ascii=False)
+                    if isinstance(instr, (list, dict)) else str(instr))
+
+            if "nutritionDetails" in cols:
+                add("nutritionDetails",
+                    json.dumps(new_meal.get("nutritionDetails", {}),
+                            ensure_ascii=False))
+
+            if "imageUrl" in cols:
+                add("imageUrl", new_meal.get("imageUrl"))
+
+            if not setters:
+                print("[update_meal_in_db] Nothing to update")
+                return False
+
+            params.append(meal_id)
+            sql = f"UPDATE Meal SET {', '.join(setters)} WHERE mealId = %s"
+            self.cur.execute(sql, tuple(params))
+
+            # 3. keep planData JSON in sync
             self.update_plan_data_for_meal(plan_id)
-            
+
             return True
-            
+
         except Exception as e:
-            print(f"Error updating meal in DB: {e}")
+            print(f"[update_meal_in_db] Error: {e}")
             return False
-        
-def find_similar_meal(self, current_meal, user_profile):
-    """Find a similar meal from the meal_nutrition database"""
-    try:
-        self._ensure_conn()
-        
-        current_cal = float(current_meal['nutritional_values']['calories'])
-        min_cal = current_cal * 0.85
-        max_cal = current_cal * 1.15
-        meal_type = current_meal['description'].split()[2].lower()  # Extract meal type
-        
-        # Get the disease type for filtering
-        disease_type = user_profile.get('diseaseType', '')
-        
-        # Build query based on disease type
-        base_query = """
-            SELECT meal_id, title, meal_type, kcal, protein, carbohydrate, fat, portion
-            FROM meal_nutrition
-            WHERE meal_type = %s AND kcal BETWEEN %s AND %s
-            AND meal_id != %s
+
+
+    # ───────────────────────────────────────────────────────────────
+    # 2)  N E W   H E L P E R   update_plan_data_for_meal
+    # ───────────────────────────────────────────────────────────────
+    def update_plan_data_for_meal(self, plan_id: int) -> None:
         """
+        Re-create the weekly plan JSON (planData) for a single DietPlan row.
+        Safe to call after any Meal INSERT/UPDATE/DELETE.
+        """
+        try:
+            self._ensure_conn()
+
+            # fetch static plan header
+            self.cur.execute("""
+                SELECT weekStartDate, targetCalories
+                FROM   DietPlan
+                WHERE  planId = %s
+            """, (plan_id,))
+            plan_row = self.cur.fetchone()
+            if not plan_row:
+                print("[update_plan_data_for_meal] Plan not found")
+                return
+
+            # fetch all meals belonging to this plan
+            self.cur.execute("""
+                SELECT dayOfWeek, mealType, name, portion,
+                    calories, protein, carbs, fat, summary
+                FROM   Meal
+                WHERE  planId = %s
+                ORDER  BY dayOfWeek,
+                        FIELD(mealType,'breakfast','morning_snack',
+                                    'lunch','afternoon_snack',
+                                    'dinner','supper')
+            """, (plan_id,))
+            meals = self.cur.fetchall()
+
+            # rebuild weekly JSON
+            days_of_week = ['Monday','Tuesday','Wednesday','Thursday',
+                            'Friday','Saturday','Sunday']
+            weekly_plan = []
+            for d in range(1, 8):   # 1-7
+                todays = [m for m in meals if m["dayOfWeek"] == d]
+                weekly_plan.append({
+                    "day"       : d,
+                    "day_name"  : days_of_week[d-1],
+                    "meals"     : todays,
+                    "energy"    : {
+                        "target": float(plan_row["targetCalories"]),
+                        "actual": sum(m["calories"] for m in todays)
+                    },
+                    "nutrients" : {
+                        "protein"      : sum(m["protein"] for m in todays),
+                        "carbohydrates": sum(m["carbs"]   for m in todays),
+                        "fat"          : sum(m["fat"]     for m in todays)
+                    }
+                })
+
+            # save back to DietPlan
+            self.cur.execute("""
+                UPDATE DietPlan SET planData=%s
+                WHERE planId = %s
+            """, (json.dumps(weekly_plan, ensure_ascii=False), plan_id))
+
+            print("[update_plan_data_for_meal] planData refreshed")
+
+        except Exception as e:
+            print(f"[update_plan_data_for_meal] Error: {e}")
+
         
-        params = [meal_type, min_cal, max_cal, current_meal.get('id', 0)]
-        
-        # Add disease-specific filters
-        if disease_type == 'diabetes':
-            base_query += " AND is_diabetic_friendly = 1"
-        elif disease_type == 'heart':
-            base_query += " AND is_heart_friendly = 1"
-        elif disease_type == 'liver':
-            base_query += " AND is_liver_friendly = 1"
-        
-        # Order randomly and limit results
-        base_query += " ORDER BY RAND() LIMIT 1"
-        
-        self.cur.execute(base_query, params)
-        replacement = self.cur.fetchone()
-        
-        if replacement:
-            # Return in the format expected by the update function
-            return {
-                'title': replacement['title'],
-                'meal_type': replacement['meal_type'],
-                'kcal': replacement['kcal'],
-                'protein': replacement['protein'],
-                'carbohydrate': replacement['carbohydrate'],
-                'fat': replacement['fat'],
-                'portion': replacement.get('portion', 1.0)
-            }
-        
-        return None
-        
-    except Exception as e:
-        print(f"Error finding similar meal: {e}")
-        return None     
