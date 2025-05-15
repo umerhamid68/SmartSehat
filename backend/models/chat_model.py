@@ -93,8 +93,9 @@ class chat_model():
             ORDER BY dp.generatedDate DESC
             LIMIT 1
             """
-            self.diet_model.cur.execute(sql, (userId, meal_type))
-            meal_to_replace = self.diet_model.cur.fetchone()
+            conn, cur = self.diet_model._ensure_conn()
+            cur.execute(sql, (userId, meal_type))
+            meal_to_replace = cur.fetchone()
 
             if not meal_to_replace:
                 print(f"[SUB] No '{meal_type}' meal found for user {userId}")

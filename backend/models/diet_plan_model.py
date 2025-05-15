@@ -1133,24 +1133,24 @@ class diet_plan_model():
         summary, nutritionDetails (dict), imageUrl, isCompleted
         """
         try:
-            self._ensure_conn()
+            conn, cur = self._ensure_conn()
 
             # 1. verify ownership and grab planId
-            self.cur.execute("""
+            cur.execute("""
                 SELECT m.planId
                 FROM   Meal m
                 JOIN   DietPlan dp ON m.planId = dp.planId
                 WHERE  dp.userId = %s AND m.mealId = %s
             """, (user_id, meal_id))
-            row = self.cur.fetchone()
+            row = cur.fetchone()
             if not row:
                 print("[update_meal_in_db] Meal not found / not owned")
                 return False
             plan_id = row["planId"]
 
             # 2. discover available columns once
-            self.cur.execute("SHOW COLUMNS FROM Meal")
-            cols = {c["Field"] for c in self.cur.fetchall()}
+            cur.execute("SHOW COLUMNS FROM Meal")
+            cols = {c["Field"] for c in cur.fetchall()}
 
             setters, params = [], []
 
@@ -1199,7 +1199,7 @@ class diet_plan_model():
 
             params.append(meal_id)
             sql = f"UPDATE Meal SET {', '.join(setters)} WHERE mealId = %s"
-            self.cur.execute(sql, tuple(params))
+            cur.execute(sql, tuple(params))
 
             # 3. keep planData JSON in sync
             self.update_plan_data_for_meal(plan_id)
@@ -1220,21 +1220,21 @@ class diet_plan_model():
         Safe to call after any Meal INSERT/UPDATE/DELETE.
         """
         try:
-            self._ensure_conn()
+            conn, cur = self._ensure_conn()
 
             # fetch static plan header
-            self.cur.execute("""
+            cur.execute("""
                 SELECT weekStartDate, targetCalories
                 FROM   DietPlan
                 WHERE  planId = %s
             """, (plan_id,))
-            plan_row = self.cur.fetchone()
+            plan_row = cur.fetchone()
             if not plan_row:
                 print("[update_plan_data_for_meal] Plan not found")
                 return
 
             # fetch all meals belonging to this plan
-            self.cur.execute("""
+            cur.execute("""
                 SELECT dayOfWeek, mealType, name, portion,
                     calories, protein, carbs, fat, summary
                 FROM   Meal
@@ -1244,7 +1244,7 @@ class diet_plan_model():
                                     'lunch','afternoon_snack',
                                     'dinner','supper')
             """, (plan_id,))
-            meals = self.cur.fetchall()
+            meals = cur.fetchall()
 
             # rebuild weekly JSON
             days_of_week = ['Monday','Tuesday','Wednesday','Thursday',
@@ -1268,7 +1268,7 @@ class diet_plan_model():
                 })
 
             # save back to DietPlan
-            self.cur.execute("""
+            cur.execute("""
                 UPDATE DietPlan SET planData=%s
                 WHERE planId = %s
             """, (json.dumps(weekly_plan, ensure_ascii=False), plan_id))
